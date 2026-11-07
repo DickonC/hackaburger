@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 
 from bleak import BleakScanner
 
+from device_kind import EXCLUDED_KINDS, better, classify
 from mcu_display import McuDisplay
 from server_client import (DEFAULT_URL, DeviceIdHasher, ServerClient, default_config,
                            load_env, load_saved_config, merge_config, save_config)
@@ -52,6 +53,8 @@ class OccupancyScanner:
         self.window_s = window_s
         self.samples: dict[str, deque] = {}
         self.names: dict[str, str] = {}
+        self.kinds: dict[str, str] = {}        # most specific device category seen
+        self.static: dict[str, bool] = {}      # True = public (non-rotating) address
 
     def on_advertisement(self, device, adv):
         q = self.samples.get(device.address)
@@ -61,6 +64,12 @@ class OccupancyScanner:
         name = adv.local_name or device.name
         if name:
             self.names[device.address] = name
+        kind = classify(adv.manufacturer_data, adv.service_uuids, name)
+        self.kinds[device.address] = better(self.kinds.get(device.address), kind)
+        if device.address not in self.static:
+            props = (getattr(device, "details", None) or {}).get("props", {}) \
+                if isinstance(getattr(device, "details", None), dict) else {}
+            self.static[device.address] = props.get("AddressType") == "public"
 
     def snapshot(self) -> list[tuple[str, float, int]]:
         """[(address, median_rssi, n)] for every device heard in the window, strongest first."""
@@ -73,6 +82,8 @@ class OccupancyScanner:
             if not q:
                 del self.samples[addr]
                 self.names.pop(addr, None)
+                self.kinds.pop(addr, None)
+                self.static.pop(addr, None)
                 continue
             out.append((addr, statistics.median(r for _, r in q), len(q)))
         out.sort(key=lambda d: d[1], reverse=True)
@@ -93,7 +104,7 @@ def next_tick(interval: float, now: float | None = None) -> float:
     return (math.floor(now / interval + 1e-6) + 1) * interval
 
 
-def build_message(device: str, cfg: dict, heard, in_range, hasher, ts: float) -> dict:
+def build_message(device: str, cfg: dict, heard, in_range, hasher, ts: float, scanner) -> dict:
     data = {
         "people": None,
         "devices_in_range": len(in_range),
@@ -109,7 +120,9 @@ def build_message(device: str, cfg: dict, heard, in_range, hasher, ts: float) ->
         data["people"] = round(len(in_range) * cfg["people_factor"])
         if cfg["send_devices"]:
             data["devices"] = [
-                {"id": hasher(addr), "rssi": round(rssi, 1), "n": n}
+                {"id": hasher(addr), "rssi": round(rssi, 1), "n": n,
+                 "kind": scanner.kinds.get(addr, "unknown"),
+                 "static": scanner.static.get(addr, False)}
                 for addr, rssi, n in heard
             ]
     else:
@@ -190,7 +203,9 @@ async def main():
             await asyncio.sleep(max(0.0, tick - time.time()))
             scanner.window_s = cfg["window_s"]
             heard = scanner.snapshot()
-            in_range = [d for d in heard if d[1] >= cfg["threshold_dbm"]]
+            # Count only plausible people devices: drop earbuds, trackers, beacons, fixed devices.
+            in_range = [d for d in heard if d[1] >= cfg["threshold_dbm"]
+                        and scanner.kinds.get(d[0], "unknown") not in EXCLUDED_KINDS]
             people = round(len(in_range) * cfg["people_factor"])
 
             stamp = time.strftime("%H:%M:%S", time.localtime(tick))
@@ -200,7 +215,8 @@ async def main():
                   f"-> ~{people} people{state}")
             if args.verbose:
                 for addr, rssi, n in in_range:
-                    print(f"   {rssi:6.1f} dBm  n={n:<3} {addr}  {scanner.names.get(addr, '-')}")
+                    print(f"   {rssi:6.1f} dBm  n={n:<3} {scanner.kinds.get(addr, '?'):<12} "
+                          f"{addr}  {scanner.names.get(addr, '-')}")
 
             if display and cfg["display"]:
                 display.show_count(len(in_range) if cfg["enabled"] else 0, board_number)
@@ -210,7 +226,7 @@ async def main():
             due = slot is None or slot != last_send_slot
             if client and due:
                 last_send_slot = slot
-                msg = build_message(device, cfg, heard, in_range, hasher, tick)
+                msg = build_message(device, cfg, heard, in_range, hasher, tick, scanner)
                 new_cfg = await asyncio.to_thread(client.send, msg)
                 print(f"   [server] {client.last_status}")
                 if new_cfg is not None:

@@ -46,7 +46,8 @@ Poll `GET /heatmap/latest` every **5 s** in live mode and every **60 s** in dev 
 | **Room edge**: an **Auto** toggle (default on) plus a slider, −100 … −40 dBm | Auto: `PUT /heatmap/config {"filter": {"edge_mode": "auto"}}`. Moving the slider sends `{"filter": {"edge_mode": "manual", "edge_dbm": v}}` | "Which devices count as *inside* the room. **Auto** works it out from the room size. Move left to include weaker, farther signals, but you may start counting people outside. Move right to be stricter, but you may miss people in the corners. Affects the heatmap and the people count immediately." In auto mode, show the slider at the current `calibration.edge_dbm`. |
 | **LED range** slider, −100 … −30 dBm (default −75) | `PUT /heatmap/boards {"threshold_dbm"}`, which sets all 4 boards | "Only changes the number on the boards' LED displays. Doesn't affect the heatmap or the people count. Reaches the boards at their next update." |
 | Mode: **Live (10 s)** / **Dev (5 min)** | `PUT /heatmap/mode {"mode": "live" \| "dev"}` | "Live is needed for the heatmap. Switching from dev can take up to 5 min to reach the boards." |
-| **Devices per person** (default 1.4) | `PUT /heatmap/config {"people": {"devices_per_person"}}` | "People carry phones, watches and earbuds. On average, how many devices per person?" |
+| **Devices per person** (default 1.2) | `PUT /heatmap/config {"people": {"devices_per_person"}}` | "Earbuds and trackers are already filtered out. On average, how many of the remaining devices (phone, laptop, watch) does one person carry?" |
+| **"Ignore accessories & fixed devices"** toggle (default on) | `PUT /heatmap/config {"filter": {"exclude_kinds": ["earbuds","tracker","beacon","fixed"]}}`. Off = `[]` | "Don't count earbuds, AirTags, beacons, TVs and printers as people." |
 | **"Calibrate with headcount"** button: the user types the real number of people | `POST /heatmap/calibrate/headcount {"people": n}` | "Count the people in the room once. The app adjusts devices per person to match." |
 
 Keep the room-edge and LED-range controls clearly apart. They are **two different thresholds**, and mixing them up is the most likely source of confusion.
@@ -80,18 +81,20 @@ After any change, show "pending" per board until it flips to "applied". In dev m
 Data comes from `GET /heatmap/debug`. Poll it every 5 s while the view is open.
 
 1. **Filter funnel** at the top, from `funnel` in `/heatmap/latest`:
-   `312 heard → 141 heard by ≥ 3 boards → 38 inside room edge → 33 present ≥ 30 s`.
+   `312 heard → 251 plausible people → 120 heard by ≥ 3 boards → 38 inside room edge → 33 present ≥ 30 s`.
    A horizontal bar or step diagram works well.
 2. **All devices as dots on the room map**, at their `x`/`y`:
    - **in room:** filled dot.
    - **rejected:** hollow or grey dot, coloured by `reason`:
      - `outside_edge`: orange. These are usually the interesting ones, people just outside the walls.
      - `too_brief`: yellow. These are people passing by.
+     - `not_a_person` / `stationary`: light grey with a small icon per `kind` (earbuds, tag, TV…).
    - **too_few_boards:** these have no position. Count them in a side note instead.
    - Hovering a dot shows its four RSSI values and the reason it was rejected.
-3. **Device table:** id (shortened), RSSI per board (1–4), weakest, boards heard, status and reason. It should be sortable.
-4. **Live edge tuning:** show the room-edge slider here too. When it moves, the dots change colour on the next poll, so the user sees directly what the threshold does.
-5. **Calibration status:** calibration is automatic, and nobody has to walk around. Show `calibration` from `/heatmap/latest`: the room edge (auto or manual, value in dBm) and each board's offset in dB. Add a small "auto" or "manual" switch for the offsets: `PUT /heatmap/config {"offsets_mode": …}`.
+3. **Device table:** id (shortened), **kind**, RSSI per board (1–4), weakest, boards heard, status and reason. It should be sortable and filterable by kind.
+4. **What's in the room by type,** from `kinds_in_room`, e.g. "19 Apple devices, 6 laptops, 6 unknown". This makes a good small bar chart.
+5. **Live edge tuning:** show the room-edge slider here too. When it moves, the dots change colour on the next poll, so the user sees directly what the threshold does.
+6. **Calibration status:** calibration is automatic, and nobody has to walk around. Show `calibration` from `/heatmap/latest`: the room edge (auto or manual, value in dBm) and each board's offset in dB. Add a small "auto" or "manual" switch for the offsets: `PUT /heatmap/config {"offsets_mode": …}`.
 
 ## Setup flow (keep it this short)
 

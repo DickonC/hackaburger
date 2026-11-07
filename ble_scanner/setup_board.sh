@@ -28,7 +28,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ADB="${ADB:-$HOME/Library/Arduino15/packages/arduino/tools/adb/32.0.0/adb}"
 SHARED="$REPO/ble_scanner/.env.shared"
 BUILD="$REPO/arduino/count_display/build"
-FILES=(scan.py server_client.py mcu_display.py scanner.sh requirements.txt README.md .gitignore)
+FILES=(scan.py server_client.py mcu_display.py device_kind.py scanner.sh requirements.txt README.md .gitignore)
 
 list_boards() {
   echo "Connected boards (serial: hostname):"

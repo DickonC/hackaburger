@@ -84,12 +84,13 @@ One room. Store it persistently. `PUT` takes a partial object (deep merge), vali
     "uno-q-3": { "corner": "bottom_right" },
     "uno-q-4": { "corner": "bottom_left" }
   },
-  "filter": { "edge_mode": "auto", "edge_dbm": -85, "edge_margin_db": 4, "min_boards": 3, "presence_s": 30 },
+  "filter": { "exclude_kinds": ["earbuds", "tracker", "beacon", "fixed"], "stationary_h": 2,
+              "edge_mode": "auto", "edge_dbm": -85, "edge_margin_db": 4, "min_boards": 3, "presence_s": 30 },
   "offsets_mode": "auto",
   "offsets_db": { "uno-q-1": 0, "uno-q-2": 0, "uno-q-3": 0, "uno-q-4": 0 },
   "position": { "weight_k": 2.0 },
   "heatmap": { "cell_m": 0.5, "sigma_m": 1.0, "smoothing_s": 60 },
-  "people": { "devices_per_person": 1.4 }
+  "people": { "devices_per_person": 1.2 }
 }
 ```
 
@@ -113,6 +114,8 @@ One room. Store it persistently. `PUT` takes a partial object (deep merge), vali
 |---|---|
 | `width_m`, `length_m` | 1 … 100 |
 | `board_inset_m` | 0 … 3 |
+| `exclude_kinds` | a list of `kind` values (see [`server-api.md`](server-api.md)), possibly empty |
+| `stationary_h` | 0 … 48 (0 = off) |
 | `edge_mode`, `offsets_mode` | `"auto"` or `"manual"` |
 | `edge_dbm` | −100 … −40 (only used as set when `edge_mode` is `manual`; in `auto` the server overwrites it) |
 | `edge_margin_db` | 0 … 15 |
@@ -135,8 +138,14 @@ One room. Store it persistently. `PUT` takes a partial object (deep merge), vali
 
 ### In-room filter (in this order, and record the first reason that fails)
 
+**Step 0: drop obvious non-people.** Every device carries a `kind` from the board.
+- **Excluded category:** if a device's `kind` is in `exclude_kinds` on **any** board, reject it with reason `not_a_person`. Boards can disagree, and the most specific category wins.
+- **Fixed device:** reject devices that are **stationary**: the same `id` has been seen continuously for at least `stationary_h` hours. Phones rotate their address about every 15 minutes, so an id that stays for hours is almost always a TV, printer, speaker or similar. Reason: `stationary`.
+- Then check the following:
+
 | # | Check | Passes if | Reason if it fails |
 |---|---|---|---|
+| 0 | Not an obvious non-person | `kind` not in `exclude_kinds` **and** not stationary | `not_a_person` / `stationary` |
 | 1 | Heard by enough boards | `count(boards that heard it) ≥ min_boards` | `too_few_boards` |
 | 2 | Inside the room edge | `min(adj[b] over boards that heard it) ≥ edge_dbm` | `outside_edge` |
 | 3 | Present long enough | passed checks 1 and 2 in **every** snapshot of the last `presence_s` seconds that has this id. It must also have been seen in at least `ceil(presence_s / interval_s)` snapshots. With `presence_s = 0`, skip this check. | `too_brief` |
@@ -166,7 +175,7 @@ people_estimate = devices_in_room / devices_per_person         (float)
 people_smoothed = round(median(people_estimate over snapshots in the last smoothing_s seconds))
 ```
 
-`devices_per_person` (default 1.4) accounts for people carrying several Bluetooth devices: phone, watch, earbuds, laptop.
+`devices_per_person` accounts for people carrying several Bluetooth devices. Earbuds and trackers are already removed in step 0, so what's left per person is mostly a phone, sometimes a laptop or watch. **Use 1.2 as the default** (in the config example above too).
 
 **Headcount calibration:** `POST /heatmap/calibrate/headcount {"people": 23}`. Someone counts the real people in the room.
 - Set `devices_per_person = mean(devices_in_room over the last 60 s) / people`, clamped to 0.5 … 4.
@@ -195,7 +204,8 @@ people_smoothed = round(median(people_estimate over snapshots in the last smooth
   "people_smoothed": 24,
   "devices_in_room": 33,
   "devices_heard": 312,
-  "funnel": { "heard": 312, "enough_boards": 141, "inside_edge": 38, "present": 33 },
+  "funnel": { "heard": 312, "plausible_people": 251, "enough_boards": 120, "inside_edge": 38, "present": 33 },
+  "kinds_in_room": { "apple_device": 19, "computer": 6, "unknown": 6, "brand_other": 2 },
   "boards": {
     "uno-q-1": { "corner": "top_left", "x": 0.5, "y": 0.5, "online": true, "last_ts": "2026-11-07T21:30:10Z", "heard": 201,
                  "config": { "version": 5, "applied_version": 5, "pending": false, "threshold_dbm": -75, "send_every_s": 0, "interval_s": 10 } },
@@ -224,11 +234,13 @@ people_smoothed = round(median(people_estimate over snapshots in the last smooth
   "filter": { "edge_dbm": -85, "min_boards": 3, "presence_s": 30 },
   "devices": [
     { "id": "a3f9c2e1b7d04e12", "rssi": { "uno-q-1": -58, "uno-q-2": -66, "uno-q-3": -71, "uno-q-4": -69 },
-      "weakest_dbm": -71, "boards_heard": 4, "x": 3.1, "y": 2.4, "status": "in_room", "reason": null },
+      "weakest_dbm": -71, "boards_heard": 4, "x": 3.1, "y": 2.4, "kind": "apple_device", "status": "in_room", "reason": null },
     { "id": "e09b44c1aa7f2d65", "rssi": { "uno-q-1": -61, "uno-q-2": -90, "uno-q-3": null, "uno-q-4": -93 },
-      "weakest_dbm": -93, "boards_heard": 3, "x": 0.9, "y": 1.2, "status": "rejected", "reason": "outside_edge" },
+      "weakest_dbm": -93, "boards_heard": 3, "x": 0.9, "y": 1.2, "kind": "apple_device", "status": "rejected", "reason": "outside_edge" },
+    { "id": "77ab0e4c19d2f3a1", "rssi": { "uno-q-1": -55, "uno-q-2": -63, "uno-q-3": -70, "uno-q-4": -66 },
+      "weakest_dbm": -70, "boards_heard": 4, "x": 2.2, "y": 1.9, "kind": "earbuds", "status": "rejected", "reason": "not_a_person" },
     { "id": "5d20f7b39c18aa04", "rssi": { "uno-q-1": -88, "uno-q-2": null, "uno-q-3": null, "uno-q-4": null },
-      "weakest_dbm": -88, "boards_heard": 1, "x": null, "y": null, "status": "rejected", "reason": "too_few_boards" }
+      "weakest_dbm": -88, "boards_heard": 1, "x": null, "y": null, "kind": "unknown", "status": "rejected", "reason": "too_few_boards" }
   ]
 }
 ```
@@ -313,7 +325,9 @@ Store the people estimate permanently. It's anonymous.
 9. **Mode switch:** `PUT /heatmap/mode {"mode": "live"}` sets `send_every_s: 0, interval_s: 10, window_s: 20` on all four board configs, and increments their `config_version`.
 10. **Bulk LED range:** `PUT /heatmap/boards {"threshold_dbm": -60}` raises `config_version` on all four boards. Each board shows `pending: true` until a message arrives with the new version, then `pending: false`.
 11. **Heatmap rule:** `PUT /ingest/config/uno-q-2 {"interval_s": 5}` on its own → `422`. The same value via `PUT /heatmap/boards` → `200`, for all four boards.
-12. **Auth:** all new endpoints return `401` without a valid `X-API-Key`.
+12. **Obvious non-people:** a device with `kind: "earbuds"` and strong RSSI on all four boards → `rejected`, `not_a_person`. After `PUT /heatmap/config {"filter": {"exclude_kinds": []}}` it counts as `in_room`.
+13. **Stationary:** an id present in every snapshot for more than `stationary_h` hours → `rejected`, `stationary`.
+14. **Auth:** all new endpoints return `401` without a valid `X-API-Key`.
 
 ## Quick start (what the team does on the day)
 

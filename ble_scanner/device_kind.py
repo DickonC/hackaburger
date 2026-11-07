@@ -68,16 +68,24 @@ EXCLUDED_KINDS = {"earbuds", "tracker", "beacon", "fixed"}
 
 
 def _apple_kind(data: bytes) -> str | None:
-    """Walk the TLVs in Apple manufacturer data; return the most telling kind."""
-    best = None
+    """Walk the TLVs in Apple manufacturer data; return the most telling kind.
+
+    Macs advertise as AirPlay receivers too, so a personal-device message
+    (Nearby Info, Handoff, AirDrop, Nearby Action) beats "fixed".
+    """
+    found = set()
     i = 0
     while i + 1 < len(data):
         t, ln = data[i], data[i + 1]
         k = APPLE_TYPES.get(t)
-        if k and (best is None or _RANK[k] > _RANK[best]):
-            best = k
+        if k:
+            found.add(k)
         i += 2 + ln
-    return best
+    if not found:
+        return None
+    if "apple_device" in found and "fixed" in found:
+        found.discard("fixed")
+    return max(found, key=lambda k: _RANK[k])
 
 
 def classify(manufacturer_data: dict, service_uuids, name: str | None) -> str:
@@ -103,7 +111,13 @@ def classify(manufacturer_data: dict, service_uuids, name: str | None) -> str:
 
 
 def better(old: str | None, new: str) -> str:
-    """Keep the most specific kind seen for a device."""
-    if old is None or _RANK[new] > _RANK[old]:
+    """Keep the most specific kind seen for a device.
+
+    Exception: once a device has shown personal-device signals (apple_device),
+    an AirPlay advertisement doesn't turn it into "fixed" (Macs do both).
+    """
+    if old is None:
         return new
-    return old
+    if {old, new} == {"apple_device", "fixed"}:
+        return "apple_device"
+    return new if _RANK[new] > _RANK[old] else old

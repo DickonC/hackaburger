@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hackaburger // Smart Space & Air Quality Engine</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Fontshare Fonts: Cabinet Grotesk & General Sans (from Notion Webdev Tools) -->
+  <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet">
+  
+  <!-- Monospace Font for tabular metrics & telemetry -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Phosphor Icons (from Notion Webdev Tools) -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <!-- Chart.js for data visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Cabinet Grotesk"', 'sans-serif'],
+            sans: ['"General Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            // Consumer Palette (Warm, inviting, clear)
+            fresh: {
+              50: '#F0FDF4',
+              100: '#DCFCE7',
+              500: '#22C55E',
+              600: '#16A34A',
+            },
+            focus: {
+              50: '#F0F9FF',
+              500: '#0EA5E9',
+              600: '#0284C7',
+            },
+            warm: {
+              50: '#FFFBEB',
+              500: '#F59E0B',
+              600: '#D97706',
+            },
+            // Admin Palette (Obsidian precision, telemetry-focused)
+            obsidian: {
+              base: '#0A0B0D',
+              surface: '#111317',
+              elevated: '#171A20',
+              border: '#22262F',
+              accent: '#2DD4BF',
+              warning: '#FBBF24',
+              danger: '#F87171'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Swiss Grid mathematical rhythm & crisp typography */
+    body {
+      font-family: 'General Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .font-tabular {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    
+    /* Smooth transition between views */
+    .view-transition {
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    /* Consumer Glassmorphism Card */
+    .consumer-card {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+    }
+    
+    /* Admin High-Density Panel */
+    .admin-panel {
+      background-color: #111317;
+      border: 1px solid #22262F;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.5);
+    }
+    
+    /* Custom Range Slider */
+    input[type=range].admin-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #22262F;
+      border-radius: 9999px;
+      outline: none;
+    }
+    input[type=range].admin-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #2DD4BF;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(45, 212, 191, 0.5);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 transition-colors duration-300 min-h-screen flex flex-col">
+
+  <!-- ========================================== -->
+  <!-- GLOBAL NAVIGATION & DUAL VIEW SWITCHER     -->
+  <!-- ========================================== -->
+  <header class="sticky top-0 z-50 backdrop-blur-md border-b transition-colors duration-300" id="mainHeader">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Branding -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/20" id="brandLogo">
+          <i class="ph-bold ph-wind text-xl"></i>
+        </div>
+        <div>
+          <span class="font-display font-bold text-lg tracking-tight block leading-tight" id="brandTitle">Hackaburger</span>
+          <span class="text-xs text-slate-500 font-medium" id="brandSubtitle">Live Space Atmosphere &amp; Air Index</span>
+        </div>
+      </div>
+
+      <!-- Center Zone / Room Selector -->
+      <div class="hidden md:flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/70 border border-slate-300/50" id="zoneSelectorContainer">
+        <button onclick="selectZone('uno-q-1')" id="btnZone1" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-slate-900 shadow-sm">
+          <i class="ph ph-map-pin mr-1 text-emerald-600"></i> Main Study Hall (uno-q-1)
+        </button>
+        <button onclick="selectZone('uno-q-2')" id="btnZone2" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all">
+          <i class="ph ph-flask mr-1 text-sky-600"></i> Demo Zone (uno-q-2)
+        </button>
+      </div>
+
+      <!-- Right Controls: View Switcher (Consumer vs Admin) -->
+      <div class="flex items-center gap-3">
+        <div class="flex items-center p-1 rounded-xl bg-slate-200/80 border border-slate-300/60 shadow-inner" id="viewToggleGroup">
+          <button onclick="switchView('consumer')" id="btnViewConsumer" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-900 shadow-sm">
+            <i class="ph-bold ph-user"></i>
+            <span>Consumer View</span>
+          </button>
+          <button onclick="switchView('admin')" id="btnViewAdmin" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900">
+            <i class="ph-bold ph-sliders"></i>
+            <span>Admin Console</span>
+            <span class="ml-1 text-[10px] font-mono bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded">IoT</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ========================================== -->
+  <!-- VIEW 1: CONSUMER-FACING EXPERIENCE         -->
+  <!-- ========================================== -->
+  <main id="consumerView" class="view-transition flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    
+    <!-- Hero Status Banner -->
+    <div class="consumer-card rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+      <!-- Decorative ambient glow -->
+      <div class="absolute -right-16 -top-16 w-72 h-72 bg-emerald-300/30 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -left-16 -bottom-16 w-60 h-60 bg-sky-300/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold mb-3">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            LIVE ATMOSPHERE: IDEAL FOR DEEP WORK
+          </div>
+          <h1 class="font-display font-extrabold text-3xl sm:text-4xl text-slate-900 tracking-tight">
+            Quiet, crisp, and plenty of space.
+          </h1>
+          <p class="text-slate-600 text-sm sm:text-base mt-2 max-w-2xl leading-relaxed">
+            Main Study Hall currently has <strong>8 of 30 seats occupied</strong>. Indoor air freshness is optimal for cognitive stamina and long study sessions.
+          </p>
+        </div>
+
+        <!-- Quick Summary Pills -->
+        <div class="flex flex-wrap sm:flex-nowrap items-center gap-3">
+          <div class="bg-white/90 border border-slate-200/80 rounded-xl px-4 py-3 min-w-[130px] shadow-sm">
+            <span class="text-xs text-slate-500 font-medium block">Occupancy</span>
+            <div class="flex items-baseline gap-1 mt-0.5">
+              <span class="font-display font-extrabold text-2xl text-slate-900 font-tabular" id="consumerOccupancyVal">8</span>
+              <span class="text-xs text-slate-500">people (27%)</span>
+            </div>
+          </div>
+          <div class="bg-white/90 border border-slate-200/80 rounded-xl px-4 py-3 min-w-[130px] shadow-sm">
+            <span class="text-xs text-slate-500 font-medium block">Air Quality</span>
+            <div class="flex items-baseline gap-1 mt-0.5">
+              <span class="font-display font-extrabold text-2xl text-emerald-600 font-tabular" id="consumerCo2Val">680</span>
+              <span class="text-xs text-slate-500">ppm (Fresh)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Swiss Grid 3-Column Core Metrics -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      
+      <!-- Card 1: Crowd & Space Gauge -->
+      <div class="consumer-card rounded-2xl p-6 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Crowd Level</span>
+            <span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+              <i class="ph-bold ph-sparkle"></i> Spacious
+            </span>
+          </div>
+
+          <div class="flex items-center justify-center py-4">
+            <div class="relative w-36 h-36 flex items-center justify-center">
+              <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" stroke="#E2E8F0" stroke-width="8" fill="transparent"/>
+                <circle id="consumerCrowdCircle" cx="50" cy="50" r="40" stroke="#22C55E" stroke-width="8" stroke-dasharray="251.2" stroke-dashoffset="183.3" stroke-linecap="round" fill="transparent" class="transition-all duration-700"/>
+              </svg>
+              <div class="absolute flex flex-col items-center">
+                <span class="font-display font-extrabold text-3xl text-slate-900 font-tabular">27%</span>
+                <span class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Capacity</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+          <span>Available Desks</span>
+          <span class="font-bold text-slate-900 font-tabular">22 desks free</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Fresh Air & Cognitive Health -->
+      <div class="consumer-card rounded-2xl p-6 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Cognitive Stamina</span>
+            <span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-sky-100 text-sky-800">
+              <i class="ph-bold ph-brain"></i> 94% Focus
+            </span>
+          </div>
+
+          <div class="space-y-4 my-2">
+            <div>
+              <div class="flex justify-between text-xs font-medium text-slate-600 mb-1.5">
+                <span>Ventilation Quality</span>
+                <span class="font-bold text-slate-900">Optimal</span>
+              </div>
+              <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full" style="width: 88%"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs font-medium text-slate-600 mb-1.5">
+                <span>Fatigue Risk</span>
+                <span class="font-bold text-emerald-600">Very Low</span>
+              </div>
+              <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                <div class="bg-emerald-500 h-full rounded-full" style="width: 14%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+          <span>Fresh Air Index</span>
+          <span class="font-bold text-emerald-600 font-tabular">94 / 100 Score</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Window Action & Micro-Recommendation -->
+      <div class="consumer-card rounded-2xl p-6 flex flex-col justify-between border-l-4 border-l-amber-400">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Next Action</span>
+            <span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
+              <i class="ph-bold ph-clock-countdown"></i> Scheduled
+            </span>
+          </div>
+
+          <div class="my-2">
+            <span class="text-xs text-slate-500 block">Recommended Window Opening</span>
+            <div class="flex items-baseline gap-2 mt-1">
+              <span class="font-display font-extrabold text-3xl text-slate-900 font-tabular">T - 18 min</span>
+            </div>
+            <p class="text-xs text-slate-600 mt-2 leading-relaxed">
+              Air quality will stay crisp for the next 18 minutes. Opening the north windows for just <strong>4 minutes</strong> will sustain peak alertness.
+            </p>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+          <span class="text-slate-500">Target Duration</span>
+          <span class="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">4 min flush</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 24-Hour "Best Time to Visit" Visual Forecast -->
+    <div class="consumer-card rounded-2xl p-6 sm:p-8">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 class="font-display font-bold text-xl text-slate-900">Today's Crowd &amp; Focus Forecast</h2>
+          <p class="text-xs sm:text-sm text-slate-500 mt-0.5">Predictive occupancy based on BLE scanner history &amp; calendar modeling</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="flex items-center gap-1 text-slate-600"><span class="w-3 h-3 rounded-full bg-emerald-400 inline-block"></span> Best Time (Quiet)</span>
+          <span class="flex items-center gap-1 text-slate-600 ml-2"><span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span> Busy Period</span>
+        </div>
+      </div>
+
+      <!-- Chart container -->
+      <div class="h-64 w-full">
+        <canvas id="consumerForecastChart"></canvas>
+      </div>
+
+      <div class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+        <div class="p-2 rounded-xl bg-slate-50">
+          <span class="text-[11px] text-slate-500 uppercase font-semibold block">Morning (08:00 - 11:00)</span>
+          <span class="text-xs font-bold text-emerald-600 mt-0.5 block">Quiet (~5 people)</span>
+        </div>
+        <div class="p-2 rounded-xl bg-slate-50">
+          <span class="text-[11px] text-slate-500 uppercase font-semibold block">Lunch Peak (12:00 - 14:00)</span>
+          <span class="text-xs font-bold text-amber-600 mt-0.5 block">Moderate (~18 people)</span>
+        </div>
+        <div class="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
+          <span class="text-[11px] text-emerald-800 uppercase font-semibold block">Golden Focus (14:30 - 17:00)</span>
+          <span class="text-xs font-bold text-emerald-700 mt-0.5 block">★ Optimal (~8 people)</span>
+        </div>
+        <div class="p-2 rounded-xl bg-slate-50">
+          <span class="text-[11px] text-slate-500 uppercase font-semibold block">Evening (18:00 - 22:00)</span>
+          <span class="text-xs font-bold text-slate-700 mt-0.5 block">Winding Down (~6 people)</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- VIEW 2: DEDICATED ADMIN & OPERATOR CONSOLE -->
+  <!-- ========================================== -->
+  <main id="adminView" class="view-transition hidden flex-1 bg-obsidian-base text-slate-100 py-8 px-4 sm:px-6 lg:px-8 space-y-8">
+    
+    <div class="max-w-7xl mx-auto space-y-8">
+
+      <!-- Admin Top Banner: Ingest Node Status -->
+      <div class="admin-panel rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-3 h-3 rounded-full bg-teal-400 shadow-[0_0_12px_#2DD4BF] animate-pulse"></div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-sm font-bold text-teal-400">INGEST_LIVE // https://hackaburger.cch-uk.tech</span>
+              <span class="text-[10px] font-mono uppercase bg-obsidian-elevated text-slate-400 px-2 py-0.5 rounded border border-obsidian-border">Node: uno-q-1</span>
+            </div>
+            <p class="text-xs text-slate-400 font-mono mt-0.5">
+              Protocol: BLE Raw UUID Ingest • Interval: <span id="adminHeaderInterval" class="text-teal-400 font-bold">5.0s</span> • Sliding Window: <span id="adminHeaderWindow">30s</span> • Smoothing: Median Filter
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="simulateIngest()" class="px-3 py-1.5 rounded bg-obsidian-elevated hover:bg-slate-800 border border-obsidian-border text-xs font-mono text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer">
+            <i class="ph ph-arrows-clockwise text-teal-400"></i>
+            <span>Trigger Mock Ingest</span>
+          </button>
+          <button onclick="deployConfig()" class="px-3.5 py-1.5 rounded bg-teal-500 hover:bg-teal-400 text-obsidian-base text-xs font-mono font-bold transition-all shadow-md shadow-teal-500/20 flex items-center gap-1.5 cursor-pointer">
+            <i class="ph-bold ph-paper-plane-tilt"></i>
+            <span>Push Config (v<span id="configVerBadge">3</span>)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Admin Grid: Hardware Nodes & Real-Time Tuning Sliders -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Column 1: Node Health Matrix -->
+        <div class="admin-panel rounded-xl p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-obsidian-border pb-3">
+            <span class="text-xs font-mono uppercase tracking-wider text-slate-400">01 // Arduino UNO Q Nodes</span>
+            <span class="text-[10px] font-mono text-teal-400 bg-teal-950/60 px-2 py-0.5 rounded border border-teal-800/40">2 Active</span>
+          </div>
+
+          <!-- Board 1 -->
+          <div class="p-3.5 rounded-lg bg-obsidian-elevated border border-obsidian-border space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-xs font-bold text-slate-200">uno-q-1 [Room Mode]</span>
+              <span class="text-[10px] font-mono text-emerald-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-[11px] font-mono text-slate-400 pt-1">
+              <div>
+                <span class="text-[10px] text-slate-500 block">Heard BLE</span>
+                <span class="font-bold text-slate-200" id="adminHeardTotal">212</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block">In Range</span>
+                <span class="font-bold text-teal-400" id="adminInRange">41</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block">Est. Humans</span>
+                <span class="font-bold text-white text-sm" id="adminEstHumans">29</span>
+              </div>
+            </div>
+            <div class="pt-1.5 border-t border-obsidian-border/50 flex items-center justify-between text-[10px] font-mono">
+              <span class="text-slate-500">BLE Broadcast Rate:</span>
+              <span class="text-teal-400 font-bold" id="node1IntervalBadge">5.0s interval</span>
+            </div>
+          </div>
+
+          <!-- Board 2 -->
+          <div class="p-3.5 rounded-lg bg-obsidian-elevated border border-obsidian-border space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-xs font-bold text-slate-200">uno-q-2 [Demo Mode]</span>
+              <span class="text-[10px] font-mono text-emerald-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-[11px] font-mono text-slate-400 pt-1">
+              <div>
+                <span class="text-[10px] text-slate-500 block">Heard BLE</span>
+                <span class="font-bold text-slate-200">34</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block">In Range</span>
+                <span class="font-bold text-teal-400">7</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block">Est. Humans</span>
+                <span class="font-bold text-white text-sm">5</span>
+              </div>
+            </div>
+            <div class="pt-1.5 border-t border-obsidian-border/50 flex items-center justify-between text-[10px] font-mono">
+              <span class="text-slate-500">BLE Broadcast Rate:</span>
+              <span class="text-slate-400 font-medium">10.0s interval</span>
+            </div>
+          </div>
+
+          <div class="text-[11px] font-mono text-slate-500 pt-1">
+            * Arduino board sends BLE every <span id="adminPostIntervalNote" class="text-teal-400 font-semibold">5.0s</span>; adjusted via PUT /ingest/config response.
+          </div>
+        </div>
+
+        <!-- Column 2 & 3: Signal Calibration & Parameters -->
+        <div class="admin-panel rounded-xl p-5 lg:col-span-2 space-y-5">
+          <div class="flex items-center justify-between border-b border-obsidian-border pb-3">
+            <span class="text-xs font-mono uppercase tracking-wider text-slate-400">02 // Real-Time Ingest Calibration (PUT /ingest/config)</span>
+            <span class="text-xs font-mono text-slate-400">Target: <strong class="text-teal-400">uno-q-1</strong></span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            <!-- Slider 1: RSSI Threshold -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-xs font-mono">
+                <span class="text-slate-400">RSSI Threshold</span>
+                <span class="text-teal-400 font-bold" id="valThreshold">-75 dBm</span>
+              </div>
+              <input type="range" min="-100" max="-30" value="-75" class="admin-slider cursor-pointer" id="sliderThreshold" oninput="updateAdminParams()">
+              <p class="text-[10px] font-mono text-slate-500">Filter range cutoff. Discarded if weaker.</p>
+            </div>
+
+            <!-- Slider 2: Sliding Window -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-xs font-mono">
+                <span class="text-slate-400">Sliding Window</span>
+                <span class="text-teal-400 font-bold" id="valWindow">30 s</span>
+              </div>
+              <input type="range" min="5" max="180" step="5" value="30" class="admin-slider cursor-pointer" id="sliderWindow" oninput="updateAdminParams()">
+              <p class="text-[10px] font-mono text-slate-500">Device retention memory before pruning.</p>
+            </div>
+
+            <!-- Slider 3: People Factor -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-xs font-mono">
+                <span class="text-slate-400">People Factor</span>
+                <span class="text-teal-400 font-bold" id="valFactor">0.70</span>
+              </div>
+              <input type="range" min="0.2" max="1.5" step="0.05" value="0.7" class="admin-slider cursor-pointer" id="sliderFactor" oninput="updateAdminParams()">
+              <p class="text-[10px] font-mono text-slate-500">Devices-to-human ratio multiplier.</p>
+            </div>
+
+            <!-- Slider 4: Arduino BLE Send Interval (ADMIN FUNCTION) -->
+            <div class="space-y-2 p-2.5 rounded-lg bg-teal-950/20 border border-teal-500/30">
+              <div class="flex justify-between items-center text-xs font-mono">
+                <span class="text-teal-300 font-semibold">Arduino BLE Interval</span>
+                <span class="text-teal-400 font-bold text-sm" id="valInterval">5.0 s</span>
+              </div>
+              <input type="range" min="0.5" max="30" step="0.5" value="5" class="admin-slider cursor-pointer" id="sliderInterval" oninput="updateAdminParams()">
+              <p class="text-[10px] font-mono text-slate-400">Arduino transmit/scan loop delay.</p>
+            </div>
+
+          </div>
+
+          <!-- Quick Interval Preset Buttons for Admin -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-obsidian-border text-xs font-mono">
+            <span class="text-slate-400 text-[11px]">Arduino BLE Presets:</span>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="setArduinoInterval(1.0)" class="px-2 py-0.5 rounded bg-obsidian-elevated hover:bg-slate-800 text-teal-400 border border-obsidian-border text-[10px] transition cursor-pointer">1s (High Freq)</button>
+              <button type="button" onclick="setArduinoInterval(2.5)" class="px-2 py-0.5 rounded bg-obsidian-elevated hover:bg-slate-800 text-slate-300 border border-obsidian-border text-[10px] transition cursor-pointer">2.5s (Balanced)</button>
+              <button type="button" onclick="setArduinoInterval(5.0)" class="px-2 py-0.5 rounded bg-obsidian-elevated hover:bg-slate-800 text-slate-300 border border-obsidian-border text-[10px] transition cursor-pointer">5s (Default)</button>
+              <button type="button" onclick="setArduinoInterval(15.0)" class="px-2 py-0.5 rounded bg-obsidian-elevated hover:bg-slate-800 text-slate-300 border border-obsidian-border text-[10px] transition cursor-pointer">15s (Power Save)</button>
+            </div>
+          </div>
+
+          <!-- Active Calculation Preview Box -->
+          <div class="p-3 rounded-lg bg-obsidian-elevated border border-obsidian-border flex flex-wrap items-center justify-between text-xs font-mono">
+            <div class="text-slate-400">
+              Formula: <span class="text-slate-200">round(devices_in_range × people_factor)</span> = <span class="text-teal-400 font-bold" id="calcPreview">41 × 0.70 = 29 people</span>
+            </div>
+            <div class="text-slate-400 mt-2 sm:mt-0">
+              Payload size: <span class="text-slate-200">18.4 KB</span> • Dropped: <span class="text-emerald-400">0</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Telemetry Chart & Anonymized BLE Stream -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Multi-Horizon CO2 & Monte Carlo Telemetry Chart -->
+        <div class="admin-panel rounded-xl p-5 lg:col-span-2">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <span class="text-xs font-mono uppercase tracking-wider text-slate-400 block">03 // Multi-Horizon CO₂ &amp; Monte Carlo Trajectory</span>
+              <span class="text-[11px] font-mono text-slate-500">Predictive air accumulation vs ventilation threshold</span>
+            </div>
+            <span class="text-xs font-mono text-teal-400 border border-teal-900 bg-teal-950/40 px-2 py-0.5 rounded">p=0.95 Band Active</span>
+          </div>
+
+          <div class="h-64 w-full">
+            <canvas id="adminTelemetryChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Anonymized BLE Device Stream -->
+        <div class="admin-panel rounded-xl p-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-obsidian-border pb-2">
+            <span class="text-xs font-mono uppercase tracking-wider text-slate-400">04 // Live BLE Ingest Stream</span>
+            <span class="text-[10px] font-mono text-slate-500">Hash (16-hex)</span>
+          </div>
+
+          <div class="space-y-2 overflow-y-auto max-h-56 pr-1 font-mono text-xs" id="deviceStream">
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian-elevated border border-obsidian-border">
+              <span class="text-slate-300">a3f9c2e1b7d04e12</span>
+              <span class="text-teal-400">-52.0 dBm</span>
+              <span class="text-slate-500 text-[10px]">9pkts</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian-elevated border border-obsidian-border">
+              <span class="text-slate-300">7c41d09a5e2bf830</span>
+              <span class="text-teal-400">-61.5 dBm</span>
+              <span class="text-slate-500 text-[10px]">4pkts</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian-elevated border border-obsidian-border">
+              <span class="text-slate-300">11aa984c39eb01d2</span>
+              <span class="text-teal-400">-74.8 dBm</span>
+              <span class="text-slate-500 text-[10px]">2pkts</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded bg-obsidian-elevated border border-obsidian-border opacity-50">
+              <span class="text-slate-500">e09b44c1aa7f2d65</span>
+              <span class="text-slate-500">-93.0 dBm</span>
+              <span class="text-slate-600 text-[10px]">filtered</span>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-obsidian-border text-[10px] font-mono text-slate-500">
+            * BLE MAC addresses are irreversibly hashed client-side on Arduino.
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- FOOTER                                     -->
+  <!-- ========================================== -->
+  <footer class="border-t py-6 transition-colors duration-300 text-xs" id="mainFooter">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="text-slate-500 flex items-center gap-2" id="footerText">
+        <span>Hackaburger Project // ETH Zürich Hackathon 2026</span>
+        <span>•</span>
+        <span>BLE Occupancy &amp; Cognitive Air Modeling</span>
+      </div>
+      <div class="flex items-center gap-4 text-slate-500">
+        <a href="https://github.com/DickonC/hackaburger" target="_blank" class="hover:text-slate-900 transition-colors flex items-center gap-1">
+          <i class="ph ph-github-logo"></i> GitHub
+        </a>
+        <a href="https://app.notion.com/p/le123654/Webdev-Tools-320882c3222380bb96afc935e277f5eb" target="_blank" class="hover:text-slate-900 transition-colors flex items-center gap-1">
+          <i class="ph ph-bookmark-simple"></i> Webdev Inspo
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ========================================== -->
+  <!-- INTERACTION LOGIC & CHARTS                 -->
+  <!-- ========================================== -->
+  <script>
+    let currentView = 'consumer';
+    let currentZone = 'uno-q-1';
+    let configVersion = 3;
+    let consumerChart = null;
+    let adminChart = null;
+
+    // View Switcher: Consumer vs Admin Console
+    function switchView(view) {
+      currentView = view;
+      const consumerEl = document.getElementById('consumerView');
+      const adminEl = document.getElementById('adminView');
+      const body = document.body;
+      const header = document.getElementById('mainHeader');
+      const footer = document.getElementById('mainFooter');
+      const footerText = document.getElementById('footerText');
+      const brandLogo = document.getElementById('brandLogo');
+      const brandTitle = document.getElementById('brandTitle');
+      const brandSubtitle = document.getElementById('brandSubtitle');
+      const btnViewConsumer = document.getElementById('btnViewConsumer');
+      const btnViewAdmin = document.getElementById('btnViewAdmin');
+
+      if (view === 'consumer') {
+        consumerEl.classList.remove('hidden');
+        adminEl.classList.add('hidden');
+        
+        body.className = 'bg-slate-50 text-slate-800 transition-colors duration-300 min-h-screen flex flex-col';
+        header.className = 'sticky top-0 z-50 backdrop-blur-md border-b bg-white/80 border-slate-200/80';
+        footer.className = 'border-t border-slate-200 bg-white py-6 text-xs';
+        footerText.className = 'text-slate-500 flex items-center gap-2';
+        
+        brandLogo.className = 'w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/20';
+        brandTitle.className = 'font-display font-bold text-lg tracking-tight block leading-tight text-slate-900';
+        brandSubtitle.className = 'text-xs text-slate-500 font-medium';
+
+        btnViewConsumer.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-900 shadow-sm';
+        btnViewAdmin.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900';
+      } else {
+        consumerEl.classList.add('hidden');
+        adminEl.classList.remove('hidden');
+
+        body.className = 'bg-obsidian-base text-slate-100 transition-colors duration-300 min-h-screen flex flex-col';
+        header.className = 'sticky top-0 z-50 backdrop-blur-md border-b bg-obsidian-surface/90 border-obsidian-border';
+        footer.className = 'border-t border-obsidian-border bg-obsidian-surface py-6 text-xs text-slate-400';
+        footerText.className = 'text-slate-400 flex items-center gap-2 font-mono';
+        
+        brandLogo.className = 'w-10 h-10 rounded-xl bg-obsidian-elevated border border-teal-500/30 flex items-center justify-center text-teal-400 shadow-md shadow-teal-500/10';
+        brandTitle.className = 'font-mono font-bold text-lg tracking-tight block leading-tight text-white';
+        brandSubtitle.className = 'text-xs text-teal-400 font-mono';
+
+        btnViewConsumer.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white';
+        btnViewAdmin.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-teal-500 text-obsidian-base shadow-sm font-mono';
+        
+        if (!adminChart) {
+          initAdminChart();
+        }
+      }
+    }
+
+    // Zone Selector
+    function selectZone(zone) {
+      currentZone = zone;
+      const b1 = document.getElementById('btnZone1');
+      const b2 = document.getElementById('btnZone2');
+      if (zone === 'uno-q-1') {
+        b1.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-slate-900 shadow-sm';
+        b2.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all';
+        document.getElementById('consumerOccupancyVal').innerText = '8';
+        document.getElementById('consumerCo2Val').innerText = '680';
+      } else {
+        b2.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-slate-900 shadow-sm';
+        b1.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all';
+        document.getElementById('consumerOccupancyVal').innerText = '4';
+        document.getElementById('consumerCo2Val').innerText = '540';
+      }
+    }
+
+    // Admin Real-time Slider Calculations
+    let mockIngestTimer = null;
+
+    function resetIngestTimer(intervalMs) {
+      if (mockIngestTimer) clearInterval(mockIngestTimer);
+      mockIngestTimer = setInterval(simulateIngest, Math.max(400, intervalMs));
+    }
+
+    function setArduinoInterval(val) {
+      const slider = document.getElementById('sliderInterval');
+      if (slider) {
+        slider.value = val;
+        updateAdminParams();
+      }
+    }
+
+    function updateAdminParams() {
+      const thresh = document.getElementById('sliderThreshold').value;
+      const win = document.getElementById('sliderWindow').value;
+      const factor = document.getElementById('sliderFactor').value;
+      const interval = document.getElementById('sliderInterval') ? document.getElementById('sliderInterval').value : '5.0';
+
+      document.getElementById('valThreshold').innerText = thresh + ' dBm';
+      document.getElementById('valWindow').innerText = win + ' s';
+      document.getElementById('valFactor').innerText = parseFloat(factor).toFixed(2);
+      
+      const valIntervalEl = document.getElementById('valInterval');
+      if (valIntervalEl) valIntervalEl.innerText = parseFloat(interval).toFixed(1) + ' s';
+
+      const note = document.getElementById('adminPostIntervalNote');
+      if (note) note.innerText = parseFloat(interval).toFixed(1) + 's';
+
+      const hdrInterval = document.getElementById('adminHeaderInterval');
+      if (hdrInterval) hdrInterval.innerText = parseFloat(interval).toFixed(1) + 's';
+
+      const node1Badge = document.getElementById('node1IntervalBadge');
+      if (node1Badge) node1Badge.innerText = parseFloat(interval).toFixed(1) + 's interval';
+
+      // Update mock ingest rate in real time to match the Arduino interval
+      resetIngestTimer(parseFloat(interval) * 1000);
+
+      // Recalculate estimated humans dynamically
+      const inRangeCount = Math.max(5, Math.round(41 * (1 + (parseInt(thresh) + 75) / 50)));
+      const humans = Math.round(inRangeCount * parseFloat(factor));
+      
+      document.getElementById('adminInRange').innerText = inRangeCount;
+      document.getElementById('adminEstHumans').innerText = humans;
+      document.getElementById('calcPreview').innerText = `${inRangeCount} × ${parseFloat(factor).toFixed(2)} = ${humans} people`;
+    }
+
+    function deployConfig() {
+      configVersion++;
+      const interval = document.getElementById('sliderInterval') ? parseFloat(document.getElementById('sliderInterval').value).toFixed(1) : '5.0';
+      const thresh = document.getElementById('sliderThreshold').value;
+      const win = document.getElementById('sliderWindow').value;
+      const factor = parseFloat(document.getElementById('sliderFactor').value).toFixed(2);
+
+      document.getElementById('configVerBadge').innerText = configVersion;
+      alert(`Config v${configVersion} updated & queued!\n\nPayload sent to Arduino UNO Q (uno-q-1):\n• BLE Ingest/Send Interval: ${interval}s\n• RSSI Cutoff: ${thresh} dBm\n• Sliding Window: ${win}s\n• People Factor: ${factor}\n\nArduino board will adopt the ${interval}s interval on next HTTP 201 response.`);
+    }
+
+    function simulateIngest() {
+      const stream = document.getElementById('deviceStream');
+      const randomId = Math.random().toString(16).substring(2, 10) + Math.random().toString(16).substring(2, 10);
+      const rssi = -(Math.floor(Math.random() * 40) + 50).toFixed(1);
+      
+      const newRow = document.createElement('div');
+      newRow.className = 'flex items-center justify-between p-2 rounded bg-teal-950/40 border border-teal-500/30 transition-all animate-pulse';
+      newRow.innerHTML = `
+        <span class="text-teal-300 font-bold">${randomId}</span>
+        <span class="text-teal-400">${rssi} dBm</span>
+        <span class="text-slate-400 text-[10px]">live</span>
+      `;
+      stream.insertBefore(newRow, stream.firstChild);
+      if (stream.children.length > 6) {
+        stream.removeChild(stream.lastChild);
+      }
+    }
+
+    // Chart 1: Consumer "Best Time to Visit" Forecast Chart
+    function initConsumerChart() {
+      const ctx = document.getElementById('consumerForecastChart').getContext('2d');
+      const hours = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
+      const occupancy = [4, 7, 19, 9, 8, 14, 8, 3];
+
+      consumerChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: hours,
+          datasets: [{
+            label: 'Predicted Occupancy (People)',
+            data: occupancy,
+            borderColor: '#22C55E',
+            backgroundColor: 'rgba(34, 197, 94, 0.12)',
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: '#16A34A',
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            borderWidth: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0F172A',
+              titleFont: { family: 'General Sans', weight: 'bold' },
+              bodyFont: { family: 'General Sans' },
+              padding: 10,
+              cornerRadius: 8,
+              callbacks: {
+                label: (ctx) => `Est. Occupancy: ${ctx.raw} people`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 25,
+              grid: { color: 'rgba(226, 232, 240, 0.6)' },
+              ticks: { font: { family: 'General Sans' }, color: '#64748B' }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { font: { family: 'General Sans' }, color: '#64748B' }
+            }
+          }
+        }
+      });
+    }
+
+    // Chart 2: Admin Telemetry & Monte Carlo Fan Chart
+    function initAdminChart() {
+      const ctx = document.getElementById('adminTelemetryChart').getContext('2d');
+      const times = ['18:00', '18:15', '18:30', '18:45', '19:00', '19:15', '19:30', '19:45'];
+
+      adminChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: times,
+          datasets: [
+            {
+              label: 'CO₂ Trajectory (Forecast)',
+              data: [680, 790, 920, 1080, 1250, 1140, 890, 710],
+              borderColor: '#2DD4BF',
+              borderWidth: 2,
+              tension: 0.3,
+              pointRadius: 3,
+              pointBackgroundColor: '#2DD4BF'
+            },
+            {
+              label: 'Monte Carlo 95% Confidence Upper',
+              data: [680, 830, 980, 1190, 1380, 1280, 980, 790],
+              borderColor: 'rgba(45, 212, 191, 0.25)',
+              borderDash: [4, 4],
+              borderWidth: 1.5,
+              fill: '+1',
+              backgroundColor: 'rgba(45, 212, 191, 0.08)',
+              pointRadius: 0
+            },
+            {
+              label: 'Monte Carlo 95% Confidence Lower',
+              data: [680, 750, 860, 970, 1120, 1000, 800, 650],
+              borderColor: 'rgba(45, 212, 191, 0.25)',
+              borderDash: [4, 4],
+              borderWidth: 1.5,
+              fill: false,
+              pointRadius: 0
+            },
+            {
+              label: 'Ventilation Threshold (1000 ppm)',
+              data: [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000],
+              borderColor: '#F87171',
+              borderWidth: 1.5,
+              borderDash: [6, 6],
+              fill: false,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#94A3B8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              }
+            }
+          },
+          scales: {
+            y: {
+              min: 500,
+              max: 1500,
+              grid: { color: '#22262F' },
+              ticks: { color: '#64748B', font: { family: 'JetBrains Mono' } }
+            },
+            x: {
+              grid: { color: '#171A20' },
+              ticks: { color: '#64748B', font: { family: 'JetBrains Mono' } }
+            }
+          }
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initConsumerChart();
+      resetIngestTimer(5000);
+    });
+  </script>
+</body>
+</html>

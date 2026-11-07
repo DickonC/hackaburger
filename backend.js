@@ -69,6 +69,9 @@
 
   // ------------------------------------------------------------ rooms
 
+  // Preset = the page's own default rooms, or a room loaded from a dataset (not user-made, no delete button)
+  const isPreset = r => live.seedIds.includes(r.id) || ((r.history && r.history.sources) || []).some(s => s.startsWith('aalborg'));
+
   function toPageRoom(r) {
     return {
       id: r.id,
@@ -78,7 +81,7 @@
       scheduledCount: r.scheduled_count,
       co2: r.outdoor_ppm,
       windows: r.windows.map((w, i) => ({ id: i + 1, name: w.name, area: w.area_m2, isOpen: w.is_open })),
-      isCustom: !live.seedIds.includes(r.id),
+      isCustom: !isPreset(r),
       device: r.device,
     };
   }
@@ -96,9 +99,9 @@
 
   function applyServerRooms(rooms) {
     live.serverRooms = Object.fromEntries(rooms.map(r => [r.id, r]));
-    const presets = rooms.filter(r => live.seedIds.includes(r.id)).map(toPageRoom);
+    const presets = rooms.filter(isPreset).map(toPageRoom);
     DEFAULT_ROOMS.splice(0, DEFAULT_ROOMS.length, ...presets);
-    live.customs = rooms.filter(r => !live.seedIds.includes(r.id)).map(toPageRoom);
+    live.customs = rooms.filter(r => !isPreset(r)).map(toPageRoom);
   }
 
   async function loadRooms() {

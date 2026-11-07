@@ -17,15 +17,15 @@ Public base URL: `https://hackaburger.cch-uk.tech/ingest/`. Every endpoint excep
 | GET | `/ingest/occupancy/history?device=&from=&to=&step_s=&threshold_dbm=` | Time series, optionally recounted at another range |
 | GET/POST/PUT/DELETE | `/ingest/rooms[/{id}]` | Rooms: volume, windows, capacity, which board is in them |
 | PUT | `/ingest/rooms/{id}/windows` | Which windows are open |
-| GET/POST/DELETE | `/ingest/rooms/{id}/history` | Historic people counts (synthetic data is preloaded for `appleton`) |
+| GET/POST/DELETE | `/ingest/rooms/{id}/history` | Historic people counts, plus measured CO₂ where available (the Aalborg dataset rooms) |
 | GET | `/ingest/rooms/{id}/occupancy`, `/co2`, `/forecast` | People (board + history), estimated CO₂, 24 h people + CO₂ forecast |
 | GET | `/ingest/health`, `/ingest/docs` | Health check and interactive API docs |
 
 ## On the server
 
 Runs as the Docker container `hackaburger-ingest` on `127.0.0.1:8094`. The SQLite database is in `data/` and the API key is in `.env`. Neither is in git.
-The image is built from the repo root, because it includes `occupancy_forecaster/occupancy_core.py`, `rolling_24h.py` and the synthetic CSV (see `Dockerfile.dockerignore`).
-On the first start with an empty `rooms` table, it creates the frontend's three preset rooms and loads the synthetic history into `appleton`.
+The image is built from the repo root, because it includes `occupancy_forecaster/occupancy_core.py`, `rolling_24h.py` and `aalborg.py` (see `Dockerfile.dockerignore`).
+On the first start with an empty `rooms` table, it creates the frontend's three preset rooms. To load the historic data and train the models, run once: `docker exec hackaburger-ingest python -m app.dataset`. This uses the Aalborg office dataset, doi:10.5281/zenodo.10673763, CC BY 4.0; see [`docs/backend-api.md`](../docs/backend-api.md). The downloaded data and trained models are stored in `data/datasets/` and `data/models/`.
 
 ```bash
 cd ~/hackaburger/arduino-ingest

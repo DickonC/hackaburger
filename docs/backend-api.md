@@ -13,7 +13,7 @@ Interactive docs, where you can try every call: `https://hackaburger.cch-uk.tech
 ```
 board (uno-q-1) ──POST /data──▶ readings ──┐  people from BLE devices in range (threshold_dbm)
                                            ├─▶ room occupancy (board data wins, history fills gaps)
-occupancy_history (synthetic/imported) ────┘        │
+occupancy_history (Aalborg dataset) ───────┘        │
                                                     ├─▶ CO₂ estimate (mass balance, room volume + windows)
 rooms (volume, windows, capacity, device) ──────────┤
 window_events (open/close) ─────────────────────────┘
@@ -23,7 +23,34 @@ window_events (open/close) ─────────────────�
 
 - **There is no CO₂ sensor.** All CO₂ values are estimated from people and ventilation, using the frontend's `stepMassBalanceCO2` formula.
 - **The forecaster predicts people.** CO₂ is calculated from those predicted people.
-- **The forecaster needs at least 4 weeks of 5-minute history for a room.** Only `appleton` has that (the synthetic data). Other rooms fall back to holding the current count steady.
+- **The forecaster needs at least 4 weeks of 5-minute history for a room.** The history comes from the **Aalborg office dataset** (below). Rooms without their own history borrow a dataset room's models with `model_from`. Rooms with neither hold the current count steady.
+
+## Historic data: the Aalborg office dataset
+
+The source is Aalborg University, *A Danish high-resolution dataset for six office rooms with occupancy, indoor environment, heating, ventilation, lighting and room control monitoring*, Zenodo, [doi:10.5281/zenodo.10673763](https://doi.org/10.5281/zenodo.10673763), licence **CC BY 4.0**. Credit it wherever its data is shown.
+
+```bash
+docker exec hackaburger-ingest python -m app.dataset   # about 2 minutes; safe to re-run
+```
+
+This downloads the full-year CSV (checksum-verified, into `data/datasets/`, not in git) and then:
+
+- **Creates rooms `aalborg-a` … `aalborg-f`.** Their history (2023, 5-minute) holds the camera people count plus the **measured CO₂** and window state (`co2_ppm` and `window_open` in `occupancy_history`). Capacity is set to each room's observed maximum (4–9).
+- **Calibrates each room's ventilation from its measured CO₂.**
+  - The rooms have demand-controlled ventilation. The steady-state rise per person (+100–180 ppm) gives the occupied airflow: **87–161 m³/h**.
+  - Room volume couldn't be fitted reliably from the 5-minute data, so it's set to 60 m³.
+  - Running the calibrated model through each weekday from the measured 06:00 value, it stays within **59–97 ppm** of the real sensor on average.
+- **Trains the short-term models** (`occupancy_core`: persistence / seasonal / ridge / gradient-boosted trees, chosen per horizon on a validation period) into `data/models/<room>/`.
+- **Removes the old synthetic history and links the preset rooms:**
+  - `appleton` → `aalborg-a` (capacity 12)
+  - `forum` → `aalborg-d` (capacity 20)
+  - `personal` → `aalborg-c` (capacity 1)
+
+  Their ventilation is set from the dataset's median **24.9 m³/h per person** × capacity.
+
+**How a borrowed pattern is applied:**
+- It's matched by **local wall-clock time**: 10:00 in the room means 10:00 in Aalborg.
+- It's scaled by capacity: room people = model people × room capacity / source capacity.
 
 ## Database tables
 
@@ -32,7 +59,7 @@ window_events (open/close) ─────────────────�
 | `readings` | Every board message, plus the server's people count (see `server-api.md`) |
 | `configs` | Per-board settings, e.g. `threshold_dbm` |
 | `rooms` | One JSON row per room: name, volume, windows, capacity, the `device` (board) in it, CO₂ parameters |
-| `occupancy_history` | Historic people per timestamp per room, with `source`: `synthetic`, `manual`, … |
+| `occupancy_history` | Historic people per timestamp per room, with `source`: `aalborg-2023`, `manual`, …; plus measured `co2_ppm` and `window_open` where known |
 | `window_events` | Every time windows were opened or closed: which window indices are open from that moment |
 
 ## Rooms
@@ -56,7 +83,7 @@ A room looks like this:
 | `GET /rooms` | All rooms. The frontend's 3 presets are pre-created |
 | `POST /rooms` | Create a room. Needs `name`, `volume_m3` and `windows` (`[{"name", "area_m2"}]`); optional `id` and the other fields above |
 | `GET /rooms/{id}` | One room |
-| `PUT /rooms/{id}` | Change any fields (partial update), e.g. `{"device": "uno-q-2"}` |
+| `PUT /rooms/{id}` | Change any fields (partial update), e.g. `{"device": "uno-q-2"}` or `{"model_from": "aalborg-d"}` |
 | `DELETE /rooms/{id}` | Delete the room, its history and its window events |
 | `PUT /rooms/{id}/windows` | `{"open": [0, 2]}`: these windows are open from now on. `[]` closes all of them |
 
@@ -64,6 +91,7 @@ Rules:
 - Window `area_m2` must be between 0.1 and 20. The frontend currently calls this field `area`.
 - `capacity` caps the forecast.
 - `device` links the room to a board. That board's live count is used for this room.
+- `model_from` borrows another room's history and models. The `history` block shows `sources` and whether a trained short-term model exists.
 
 ## People and history
 
@@ -71,8 +99,8 @@ Rules:
 |---|---|
 | `GET /rooms/{id}/occupancy?from=&to=&step_s=300` | People per bucket, `source`: `sensor` (board), `history` or `null` (no data). Default: the last 24 h |
 | `GET /rooms/{id}/history?from=&to=` | Raw stored history points |
-| `POST /rooms/{id}/history` | `{"source": "manual", "points": [{"ts": "2026-11-07T09:00:00Z", "people": 12}]}`. Replaces points with the same `ts` |
-| `DELETE /rooms/{id}/history[?source=synthetic]` | Delete history, optionally only from one source |
+| `POST /rooms/{id}/history` | `{"source": "manual", "points": [{"ts": "2026-11-07T09:00:00Z", "people": 12, "co2_ppm": 640}]}` (`co2_ppm` optional). Replaces points with the same `ts`. Requests are limited to 256 KB, so send large imports in chunks of about 2,000 points |
+| `DELETE /rooms/{id}/history[?source=manual]` | Delete history, optionally only from one source |
 
 ## CO₂
 
@@ -100,9 +128,13 @@ Rules:
 }
 ```
 
-**People** come from `occupancy_forecaster/rolling_24h.py`: weekday × time-of-day medians, with an 80% band.
-- If the room's board has sent data in the last 10 minutes, the forecast starts at that live count. The difference from the usual pattern fades out with a 90-minute time constant (`+live_anchor`).
-- Rooms without enough history use `persistence_no_history`, which holds the current count steady.
+**People** come from the room's own models, or from those of `model_from`:
+
+- **Board live** (a reading in the last 10 minutes): the **short-term models** (`occupancy_core`) forecast the first hour. Their result then fades into the usual weekday × time-of-day pattern with a 90-minute time constant (`rolling_24h`). The model reports `short_term+historical_time_of_week`, and `models.short_term` lists which candidates were used.
+  - These models need the count from 1 day and 1 week ago. Where the board wasn't running then, the usual count for that time is used instead.
+- **No live board:** the weekday × time-of-day pattern, with an 80% band (`historical_time_of_week`).
+- **A live count but no short-term model** (or with `as_weekday`): the pattern, shifted to start at the live count and fading back with a 90-minute time constant (`+live_anchor`).
+- **No history at all:** `persistence_no_history`, which holds the current count steady.
 
 **CO₂ curves:**
 - `co2_ppm`, `co2_lower` and `co2_upper` assume the windows stay as they are now.
@@ -111,7 +143,7 @@ Rules:
 
 These match the chart's "no intervention" and "optimal flush" lines and the uncertainty band.
 
-**`as_weekday=mon…sun`** uses another weekday's pattern. The synthetic data is an office, so a real Saturday forecast shows an almost empty room. Use `as_weekday=wed` for a weekday demo on the weekend.
+**`as_weekday=mon…sun`** uses another weekday's pattern. The dataset rooms are offices, so a real weekend forecast shows an almost empty room. Use `as_weekday=wed` for a weekday demo on the weekend.
 
 ## Frontend connection (`backend.js`)
 

@@ -2,7 +2,9 @@
 
 A complete, reproducible **Python project** for forecasting occupancy from timestamped Bluetooth-derived estimates. It includes a **new clock-anchored 24-hour forecast** (288 five-minute points) as well as the original 5–60-minute ML research models. Compares **six candidate forecasting strategies** and demonstrates the selection, uncertainty calibration, and evaluation workflow used in robust time-series research.
 
-> **Important:** The included 10-week dataset is entirely **synthetic**. The demo verifies that the code works; its MAE scores **do not** establish real-world predictive accuracy. Current counts refer to estimated occupants, not verified people.
+> **Data:** the models are trained on a **real** dataset: six office rooms in Aalborg, Denmark, measured every 5 minutes from 27 Feb to 31 Dec 2023. People counts come from cameras, and CO₂, windows and ventilation come from the building system. Source: Aalborg University, *A Danish high-resolution dataset for six office rooms with occupancy, indoor environment, heating, ventilation, lighting and room control monitoring*, Zenodo, [doi:10.5281/zenodo.10673763](https://doi.org/10.5281/zenodo.10673763), licence **CC BY 4.0**.
+>
+> The people counts are missing for whole days or weeks (cameras off). Those slots stay missing; they're not treated as empty rooms.
 
 ## Quick start
 
@@ -10,13 +12,32 @@ From this project directory:
 
 ```bash
 python -m pip install -r requirements.txt
-python run.py demo
+python run.py aalborg                 # download (checksum-verified), convert, train rooms A-F
 python -m unittest discover -s tests -v
 ```
 
-The `demo` command regenerates `data/synthetic_occupancy.csv` (10 weeks, 5-minute intervals, 32-person capacity, reproducible seed), fits six candidates for each 5–60-minute horizon, and runs two chronological walk-forward tests.
+`run.py aalborg` downloads the dataset from Zenodo into `data/raw/` (88 MB; it isn't in git) and writes `data/aalborg_occupancy.csv` (`timestamp,room_id,count,co2_ppm,window_open`, in Copenhagen local time). It then trains each room into `outputs/aalborg-<room>/`: six short-term candidates per 5–60-minute horizon, two walk-forward backtests and the 24-hour calendar model. `--rooms ad` trains only rooms A and D. Training all six rooms takes about a minute.
 
-Open **`outputs/occupancy_24h_dashboard.html`** in your browser to see the next 24 hours starting from **the actual computer time**, not the end of the synthetic CSV. It is self-contained and needs no server. `outputs/occupancy_dashboard.html` remains the older historical research report.
+In the deployed app, the backend runs the same steps: `docker exec hackaburger-ingest python -m app.dataset` (see `arduino-ingest/app/dataset.py`).
+
+### Results on the dataset (blind backtests)
+
+Selected model per horizon:
+
+| Room | +15 min | +30 min | +60 min |
+|---|---|---|---|
+| A | persistence | persistence | persistence (GBDT tied) |
+| B | persistence | persistence | seasonal |
+| C | persistence | persistence | seasonal |
+| D | persistence | GBDT | GBDT |
+| E | persistence | GBDT | GBDT |
+| F | persistence | persistence | persistence |
+
+The mean absolute error is 0.05–0.3 people.
+
+These offices are small (max 4–9 people) and occupancy rarely changes within 15 minutes, so "no change" is hard to beat at short horizons. The gradient-boosted trees only win at 30–60 minutes in the busier rooms. The 24-hour forecast uses the weekday × time-of-day pattern (`rolling_24h.py`).
+
+Open **`outputs/aalborg-a/occupancy_24h_dashboard.html`** (one per room) in your browser to see the next 24 hours starting from **the actual computer time**, not the end of the 2023 data. It is self-contained and needs no server. `outputs/occupancy_dashboard.html` remains the older historical research report.
 
 ### Generate a new 24-hour forecast using the current clock
 
@@ -81,14 +102,14 @@ A different candidate may win at each 5-minute horizon. The algorithm chooses by
 
 ```text
 occupancy_forecaster/
-├── data/synthetic_occupancy.csv       # REPRODUCIBLE SIMULATED INPUT
-├── generate_data.py                   # Generator for artificial office patterns
+├── aalborg.py                         # Download + convert the Aalborg office dataset
+├── data/                              # Downloaded/converted data (not in git)
 ├── occupancy_core.py                  # All ML models, selection, calibration, scoring
 ├── rolling_24h.py                     # Clock, 24h model, logging and validation
-├── run.py                             # CLI: demo | train | forecast | evaluate
+├── run.py                             # CLI: aalborg | train | forecast | evaluate | forecast-day
 ├── dashboard.py                       # Streamlit UI with refreshed 24h forecast
 ├── DESIGN_DECISIONS.md                # Explanation of each modelling decision
-├── tests/                              # Leakage, idempotency, forecasting tests
+├── tests/                              # Leakage, idempotency, forecasting tests (fixture_data.py: test-only synthetic series)
 └── outputs/
     ├── forecast_bundle.joblib          # Models, horizons, selected candidates, radii
     ├── calendar_model.joblib           # Clock-based long-horizon seasonal model
@@ -96,7 +117,7 @@ occupancy_forecaster/
     ├── forecast_log_24h.csv            # Issued 24h prediction history for later validation
     ├── occupancy_24h_dashboard.html    # Current-clock standalone 24h chart
     ├── input_history.csv               # Aggregated readings used by the dashboard
-    ├── project_metadata.json           # Synthetic vs user-supplied data source
+    ├── project_metadata.json           # Data source label
     ├── forecast.csv                    # Current 5/10/.../60 min forecast
     ├── model_selection.csv             # Selected model + selection MAE by horizon
     ├── forecast_skill.csv              # Improvement relative to simple baselines
@@ -143,11 +164,9 @@ This writes `outputs/live_evaluation.csv`, with actual occupancy, signed error, 
 
 The trained bundle is a Python `joblib` pickle. Load **only models you generated yourself or from a trusted source**, not arbitrary downloaded model files. Models from the old project version are not compatible with this updated bundle format; retrain with `demo` or `train`.
 
-## Interpreting the example scores
+## Interpreting the scores
 
-The synthetic demo often selects **persistence at +5 min** and **boosting at longer horizons**; it is a genuine outcome of selection, not a hardcoded choice. The held-out dataset is still artificially structured. A real office could behave differently, and a sophisticated model can lose to simple baselines.
-
-The conformal intervals represent errors in predicted input counts and do **not** include additional uncertainties from mapping detectable Bluetooth devices to people. For reliable deployment, periodically compare detections with **manual headcounts** and recalibrate the sensing and forecasting chain. Do not use uncalibrated headcounts for safety-critical monitoring.
+The selection is a real outcome of the procedure, not hard-coded. The scores come from camera counts in six specific Danish offices in 2023. A different room, or BLE-based counts, can behave differently. The conformal intervals cover errors in the counts only, not errors in turning Bluetooth devices into people.
 
 ## Potential later extension
 

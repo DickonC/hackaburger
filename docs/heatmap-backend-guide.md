@@ -24,7 +24,9 @@ Four Arduino UNO Q boards sit in the four corners of one room. From their Blueto
 
 ## Controlling the boards
 
-The boards can't be reached from the server, because eduroam blocks incoming connections. **All control works through the reply to each board's `POST /ingest/data`:** the server returns that board's full `config`, and the board applies it immediately. So the server only has to store the desired settings per board. They take effect at each board's **next POST**.
+The boards can't be reached from the server, because eduroam blocks incoming connections. **All control works through the reply to each board's `POST /ingest/data`:** the server returns that board's full `config`, and the board applies it immediately. So the server only has to store the desired settings per board.
+
+**Boards also poll their settings:** between POSTs, each board calls `GET /ingest/config/{device}` every 15 s. It's a small request, about 4 per minute per board. **This endpoint must keep returning the board's full config object.**
 
 ### Board settings (`/ingest/config/{device}`)
 
@@ -47,7 +49,7 @@ The existing fields, plus one new one, `send_every_s`:
 - Saves the last config, so it survives a reboot.
 - Queues messages while offline and resends them later.
 
-**How long a change takes to reach a board:** up to one `send_every_s`. In **dev mode** (300) that's up to 5 minutes, and in **live mode** (0, every 10 s) it's up to 10 s.
+**How long a change takes to reach a board:** about **15 s** in either mode, thanks to the settings poll. In live mode it's up to 10 s, via the POST replies. Dev mode still only *sends data* every 5 minutes.
 
 **Applied or pending:**
 - Every board message contains `data.config_version`, the version the board was running when it measured.

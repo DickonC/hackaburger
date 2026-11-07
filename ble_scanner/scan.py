@@ -40,8 +40,9 @@ from bleak import BleakScanner
 
 from device_kind import EXCLUDED_KINDS, better, classify
 from mcu_display import McuDisplay
-from server_client import (DEFAULT_URL, DeviceIdHasher, ServerClient, default_config,
-                           load_env, load_saved_config, merge_config, save_config)
+from server_client import (DEFAULT_URL, DeviceIdHasher, ServerClient, clock_synced,
+                           default_config, load_env, load_saved_config, merge_config,
+                           save_config)
 
 MAX_SAMPLES_PER_DEVICE = 300
 
@@ -88,6 +89,30 @@ class OccupancyScanner:
             out.append((addr, statistics.median(r for _, r in q), len(q)))
         out.sort(key=lambda d: d[1], reverse=True)
         return out
+
+
+def count_in_range(heard, counted: set, threshold: float, margin: float, kinds: dict) -> list:
+    """Devices counted for the board's own number (LED, devices_in_range), with hysteresis.
+
+    A device starts counting once its median RSSI reaches `threshold` and only stops
+    once it falls below `threshold - margin` (or isn't heard any more). That stops
+    devices sitting right at the threshold from flipping in and out every update.
+    Earbuds, trackers, beacons and fixed devices are never counted.
+    `counted` (addresses currently counted) is updated in place.
+    """
+    out = []
+    still = set()
+    for d in heard:
+        addr, rssi = d[0], d[1]
+        if kinds.get(addr, "unknown") in EXCLUDED_KINDS:
+            continue
+        limit = threshold - margin if addr in counted else threshold
+        if rssi >= limit:
+            out.append(d)
+            still.add(addr)
+    counted.clear()
+    counted.update(still)
+    return out
 
 
 def utc_iso(t: float) -> str:
@@ -148,6 +173,14 @@ async def main():
                    help="POST only every N seconds, aligned to the clock (300 -> every full 5 min). "
                         "Fallback only: once the server sends send_every_s, that wins. "
                         "The display still updates every interval")
+    p.add_argument("--hysteresis", type=float, default=5,
+                   help="dB a counted device may drop below the threshold before it stops "
+                        "counting (default 5, 0 = off)")
+    p.add_argument("--smooth", type=int, default=3,
+                   help="LED shows the median of the last N counts (default 3, 1 = off)")
+    p.add_argument("--config-poll", type=float, default=15,
+                   help="with --send: ask the server for new settings every N seconds between "
+                        "sends (default 15, 0 = only via send replies)")
     p.add_argument("-v", "--verbose", action="store_true", help="list each counted device")
     args = p.parse_args()
 
@@ -196,6 +229,20 @@ async def main():
     # The first POST goes out at the first tick (so you see it working), then
     # every --send-interval, on clock boundaries.
     last_send_slot = None
+    last_config_check = time.monotonic()
+    synced = False
+    counted: set = set()
+    recent_counts: deque = deque(maxlen=max(1, args.smooth))
+
+    def apply_config(new_cfg, source: str):
+        nonlocal cfg
+        if new_cfg is None:
+            return
+        merged, changed = merge_config(cfg, new_cfg)
+        if changed:
+            cfg = merged
+            save_config(cfg)
+            print(f"   [{source}] new settings: " + ", ".join(f"{k}={cfg[k]}" for k in changed))
 
     async with BleakScanner(detection_callback=scanner.on_advertisement):
         while True:
@@ -203,9 +250,9 @@ async def main():
             await asyncio.sleep(max(0.0, tick - time.time()))
             scanner.window_s = cfg["window_s"]
             heard = scanner.snapshot()
-            # Count only plausible people devices: drop earbuds, trackers, beacons, fixed devices.
-            in_range = [d for d in heard if d[1] >= cfg["threshold_dbm"]
-                        and scanner.kinds.get(d[0], "unknown") not in EXCLUDED_KINDS]
+            # Count only plausible people devices, with hysteresis at the threshold.
+            in_range = count_in_range(heard, counted, cfg["threshold_dbm"], args.hysteresis,
+                                      scanner.kinds)
             people = round(len(in_range) * cfg["people_factor"])
 
             stamp = time.strftime("%H:%M:%S", time.localtime(tick))
@@ -228,24 +275,30 @@ async def main():
                 print("   by kind: " + ", ".join(f"{k} {v}" for k, v in
                                                  sorted(kinds.items(), key=lambda kv: -kv[1])))
 
+            recent_counts.append(len(in_range) if cfg["enabled"] else 0)
             if display and cfg["display"]:
-                display.show_count(len(in_range) if cfg["enabled"] else 0, board_number)
+                display.show_count(round(statistics.median(recent_counts)), board_number)
 
+            if not client:
+                continue
+            if not synced:
+                synced = clock_synced()
+                if not synced:
+                    print("   [clock] waiting for internet time sync, not sending yet")
             se = send_every()
             slot = None if not se else math.floor(tick / se + 1e-6)
             due = slot is None or slot != last_send_slot
-            if client and due:
+            if due and synced:
                 last_send_slot = slot
+                last_config_check = time.monotonic()
                 msg = build_message(device, cfg, heard, in_range, hasher, tick, scanner)
                 new_cfg = await asyncio.to_thread(client.send, msg)
                 print(f"   [server] {client.last_status}")
-                if new_cfg is not None:
-                    merged, changed = merge_config(cfg, new_cfg)
-                    if changed:
-                        cfg = merged
-                        save_config(cfg)
-                        print("   [server] new settings: " +
-                              ", ".join(f"{k}={cfg[k]}" for k in changed))
+                apply_config(new_cfg, "server")
+            elif args.config_poll > 0 and time.monotonic() - last_config_check >= args.config_poll:
+                # Between sends, a small GET keeps settings changes to within ~15 s.
+                last_config_check = time.monotonic()
+                apply_config(await asyncio.to_thread(client.fetch_config), "config check")
 
 
 if __name__ == "__main__":

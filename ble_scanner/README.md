@@ -87,7 +87,12 @@ macOS asks for Bluetooth permission for your terminal app the first time.
 | `--window` | 60 | Seconds a device stays counted after its last advert. |
 | `--interval` | 10 | Seconds between reports. |
 | `--people-factor` | 0.7 | People per counted device. Calibrate against a real headcount. |
-| `-v` | off | List each counted device with its RSSI. |
+| `-v` | off | List every device within range with its category, marking the ones not counted. |
+| `--hysteresis` | 5 | dB a counted device may drop below `--threshold` before it stops counting, so devices at the edge don't flicker. |
+| `--smooth` | 3 | The LED shows the median of the last N counts. |
+| `--config-poll` | 15 | With `--send`: ask the server for new settings every N s between sends. |
+
+With `--send`, the scanner only sends once the board's clock is internet-synced after power-on, so messages never carry a wrong timestamp.
 
 ## Calibrating the range
 

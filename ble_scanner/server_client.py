@@ -12,6 +12,8 @@ import hashlib
 import hmac
 import json
 import os
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -116,9 +118,34 @@ class DeviceIdHasher:
         return hmac.new(self.key, address.upper().encode(), hashlib.sha256).hexdigest()[:16]
 
 
+def clock_synced() -> bool:
+    """True once the system clock is internet-synced (or we can't tell, e.g. on a Mac).
+
+    Boards have no battery-backed clock: right after power-on the time can be off
+    until NTP syncs, which would give messages a wrong ts.
+    """
+    if not shutil.which("timedatectl"):
+        return True
+    try:
+        out = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
+                             capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() == "yes"
+    except (OSError, subprocess.SubprocessError):
+        return True
+
+
+def config_url_for(data_url: str, device: str) -> str:
+    """https://host/ingest/data -> https://host/ingest/config/<device>"""
+    base = data_url.rstrip("/")
+    if base.endswith("/data"):
+        base = base[: -len("/data")]
+    return f"{base}/config/{device}"
+
+
 class ServerClient:
-    def __init__(self, url: str, api_key: str, device: str):
+    def __init__(self, url: str, api_key: str, device: str, config_url: str | None = None):
         self.url = url
+        self.config_url = config_url or config_url_for(url, device)
         self.api_key = api_key
         self.device = device
         self.queue: deque = deque(maxlen=MAX_QUEUE)
@@ -142,6 +169,25 @@ class ServerClient:
             return status, json.loads(raw or b"null")
         except ValueError:
             return status, None
+
+    def fetch_config(self) -> dict | None:
+        """GET this board's config (a small request, used between sends). None on any failure."""
+        if time.time() < self.auth_blocked_until:
+            return None
+        req = urllib.request.Request(self.config_url, method="GET", headers={
+            "X-API-Key": self.api_key, "User-Agent": "hackaburger-uno-q/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+                reply = json.loads(resp.read() or b"null")
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                self.auth_blocked_until = time.time() + AUTH_RETRY_S
+            return None
+        except (OSError, urllib.error.URLError, ValueError):
+            return None
+        if isinstance(reply, dict) and isinstance(reply.get("config"), dict):
+            reply = reply["config"]
+        return reply if isinstance(reply, dict) else None
 
     def send(self, message: dict) -> dict | None:
         """Queue `message`, send queued messages oldest first.

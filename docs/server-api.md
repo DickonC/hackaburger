@@ -1,193 +1,194 @@
-# Sensor ↔ server API (draft)
+# Board ↔ server communication format
 
-How the two Arduino UNO Q boards send Bluetooth scans to the server, and what the server hands to the webapp and CO₂ model.
-**Status:** draft for discussion. Nothing is implemented on the server side yet.
+How the Arduino UNO Q boards send their Bluetooth scans to the server, and how the server sends settings back.
+Built on the existing endpoint `https://hackaburger.cch-uk.tech/ingest/data`.
 
-## Setup: two boards
+**Status:** proposal. Sending `{"people": n}` already works. The `config` reply and the `/ingest/config` endpoints below still need to be added on the server.
 
-| `sensor_id` | Where | Purpose |
-|---|---|---|
-| `unoq-room` | inside the room, roughly central | hears people in the room |
-| `unoq-outside` | in the corridor or next room, near the door | hears people *outside*, so they can be excluded |
+## The rule
 
-A phone is counted as **in the room** if the room board hears it more strongly than the outside board (and above a minimum signal).
-The comparison happens on the **server**. The boards don't know about each other.
+The board **always starts the connection** (eduroam blocks incoming connections). Every `interval_s` seconds it sends one POST.
+**The server's reply to that POST carries the board's settings.** The webapp changes settings on the server, and the board picks them up at its next POST.
 
-## Rules of the connection
-
-- **The board always starts the connection.** It sends an HTTPS POST every `interval_s` seconds (default 10). The server can't contact the board.
-  Eduroam blocks incoming connections.
-- **Settings travel back in the reply.** To change a board's range or interval, the webapp stores new settings on the server, and the board picks them up from the reply to its next POST.
-- **The server must be publicly reachable over HTTPS (port 443)**, e.g. a hosted service or a laptop behind Cloudflare Tunnel or ngrok.
-- **Each board sends a secret token** in the `Authorization` header. The server rejects requests without a valid token.
-- **All timestamps are UTC, ISO 8601.**
+```
+board ── POST /ingest/data  {count + measurements} ──▶ server   (stores it)
+board ◀── 201 {"stored": 1, "config": {...}} ───────── server   (board applies config)
+webapp ── PUT /ingest/config/uno-q-1 {"threshold_dbm": -60} ──▶ server   (board gets it next round)
+```
 
 ---
 
-## 1. Board → server: `POST /api/v1/readings`
+## 1. Board → server: `POST /ingest/data`
 
-Sent by each board every `interval_s` seconds.
+Headers:
 
-```http
-POST /api/v1/readings HTTP/1.1
-Host: hackaburger.example.com
-Authorization: Bearer <board-token>
+```
+X-API-Key: <API key, never commit it>
 Content-Type: application/json
 ```
 
+Body:
+
 ```json
 {
-  "sensor_id": "unoq-room",
-  "seq": 1842,
-  "window_start": "2026-11-07T17:20:00Z",
-  "window_end":   "2026-11-07T17:20:10Z",
-  "threshold_dbm": -75,
-  "device_count": 41,
-  "heard_total": 212,
-  "devices": [
-    { "id": "a3f9c2e1b7d04e12", "rssi": -52.0, "n": 9 },
-    { "id": "7c41d09a5e2bf830", "rssi": -61.5, "n": 4 },
-    { "id": "e09b44c1aa7f2d65", "rssi": -73.0, "n": 2 }
-  ]
+  "device": "uno-q-1",
+  "ts": "2026-11-07T18:20:05Z",
+  "data": {
+    "people": 29,
+    "devices_in_range": 41,
+    "heard_total": 212,
+    "config_version": 3,
+    "settings": { "threshold_dbm": -75, "window_s": 30, "people_factor": 0.7 },
+    "devices": [
+      { "id": "a3f9c2e1b7d04e12", "rssi": -52.0, "n": 9 },
+      { "id": "7c41d09a5e2bf830", "rssi": -61.5, "n": 4 },
+      { "id": "e09b44c1aa7f2d65", "rssi": -83.0, "n": 1 }
+    ]
+  }
 }
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sensor_id` | string | Which board sent this. |
-| `seq` | int | Counts up by 1 per message (restarts at 0 after a reboot). Lets the server ignore duplicates. |
-| `window_start`, `window_end` | time | The 10 s scan window this message covers. Windows are aligned to the clock (…:00, …:10, …:20), so both boards' windows line up. |
-| `threshold_dbm` | int | The board's current range setting. |
-| `device_count` | int | Devices this board alone counts within `threshold_dbm`. A fallback if the other board is offline. |
-| `heard_total` | int | All devices heard, including far away ones. For information only. |
-| `devices` | list | Every device heard in this window with RSSI ≥ `report_floor_dbm` (default −90). It deliberately includes devices beyond the threshold so the server can compare boards. |
-| `devices[].id` | string | **Anonymised** device ID: the first 16 hex characters of `HMAC-SHA256(shared_secret, bluetooth_address)`. Both boards use the same secret, so the same phone gets the same `id` on both boards. The server never sees real addresses. |
-| `devices[].rssi` | number | Median signal strength in this window, in dBm. Closer to 0 means closer. |
-| `devices[].n` | int | Number of times the device was heard in this window. |
+| `device` | string | Board name: `uno-q-1`, `uno-q-2`, … |
+| `ts` | string | When the board made this measurement, UTC ISO 8601. It can differ from the server's `received_at` when queued messages are resent. |
+| `data.people` | int | Estimated people in range: `round(devices_in_range × people_factor)`. **This is the main number for the webapp.** |
+| `data.devices_in_range` | int | Devices heard within `threshold_dbm` during the last `window_s` seconds. The LED matrix shows this number. |
+| `data.heard_total` | int | All devices heard in the window, at any distance. For information only. |
+| `data.config_version` | int | The config version the board was using when it measured. Lets the server see whether a change has arrived yet. |
+| `data.settings` | object | The settings this count was calculated with, so old data stays interpretable after settings change. |
+| `data.devices` | list | Raw measurements: **every device the board heard in the last `window_s` seconds, at any signal strength**, with no filtering by `threshold_dbm`. The server can recount with any range it likes. Only left out if `send_devices` is `false`. |
+| `devices[].id` | string | **Anonymised** device ID: the first 16 hex characters of `HMAC-SHA256(secret, bluetooth_address)`. All boards use the same secret, so the same phone gets the same ID on every board. The server never sees real addresses. Note that phones change their address about every 15 minutes, so IDs don't track anyone long-term either. |
+| `devices[].rssi` | number | Median signal strength in the window, in dBm. Closer to 0 means closer to the board. |
+| `devices[].n` | int | How often the device was heard in the window. |
 
-### Server → board: reply
+In a busy venue the board hears 300–500 devices, which makes a message of roughly 15–25 KB. Every 5 s that's about 4 KB/s per board, which is fine. With `send_devices: false` a message is under 300 bytes.
+
+---
+
+## 2. Server → board: reply
 
 ```json
 {
-  "ok": true,
-  "server_time": "2026-11-07T17:20:10.412Z",
+  "stored": 1,
   "config": {
+    "config_version": 4,
     "enabled": true,
-    "interval_s": 10,
-    "threshold_dbm": -75,
-    "report_floor_dbm": -90,
-    "config_version": 3
+    "threshold_dbm": -60,
+    "window_s": 10,
+    "interval_s": 2,
+    "people_factor": 0.7,
+    "send_devices": true,
+    "display": true
   }
 }
 ```
 
-The board applies `config` straight away. If `config_version` is unchanged, nothing changes. `"enabled": false` means the board keeps checking in but sends no device data, so it can be switched on again from the webapp.
+### Settings (`config`)
+
+| Field | Type | Default | Allowed | Meaning |
+|---|---|---|---|---|
+| `config_version` | int | 1 | ≥ 1 | Increased by the server on every change. The board only re-applies settings when it changes. |
+| `enabled` | bool | `true` | | `false`: the board keeps checking in every `interval_s` but sends no measurements (`people` is `null`, no `devices`). |
+| `threshold_dbm` | int | `-75` | `-100` … `-30` | **The range** for the board's own count (`devices_in_range`, `people`, LED display). Only devices at least this strong are counted. Does **not** filter `devices`. See the table below. |
+| `window_s` | int | `30` | `2` … `300` | A device stays counted this long after it was last heard. Short = reacts fast, but the count jumps. Long = stable. |
+| `interval_s` | number | `5` | `1` … `60` | Seconds between POSTs, and so also how often the LED display updates. |
+| `people_factor` | number | `0.7` | `0.1` … `2.0` | People per device. Calibrate against a real headcount. |
+| `send_devices` | bool | `true` | | Whether to include the raw `devices` list (all devices heard). |
+| `display` | bool | `true` | | Show `devices_in_range` on the LED matrix. |
+
+**Range guide for `threshold_dbm`** (rough indoor values. Calibrate on site):
+
+| `threshold_dbm` | Distance | Use |
+|---|---|---|
+| `-40` | arm's length | demo: phone on the board |
+| `-55` | about 1–2 m | one table |
+| `-65` | about 3–5 m | small room |
+| `-75` | about 5–10 m | normal room (**default**) |
+| `-85` | about 10–20 m, through walls | large hall |
+| `-100` | everything the board can hear | no filter |
+
+**Suggested presets:**
+
+| Preset | `threshold_dbm` | `window_s` | `interval_s` |
+|---|---|---|---|
+| Room (default) | -75 | 30 | 5 |
+| Demo (instant) | -40 | 6 | 1 |
+| Whole venue | -100 | 30 | 5 |
+
+### Rules for the board
+
+- The board **ignores unknown fields** and **keeps the current value for missing fields**. So a reply of just `{"stored": 1}`, which is what the server returns today, changes nothing.
+- Values outside the allowed range are clamped to the nearest allowed value. A wrongly typed value is ignored.
+- The board saves the last config to a file, so after a reboot it starts with the latest settings even before the server answers.
+- New settings take effect from the next measurement. The window is not reset, so the first count after a range change is already correct.
+
+### Status codes
 
 | Status | Meaning | What the board does |
 |---|---|---|
-| `200` | OK | Applies `config`. |
-| `400` | Malformed message | Logs the error and drops the message. |
-| `401` | Wrong or missing token | Logs the error and keeps retrying slowly (once a minute). |
-| `5xx` / no connection | Server down or no Wi-Fi | **Keeps the message** and resends queued messages oldest first once the server is back. It keeps up to about 1 hour, then drops the oldest. |
+| `201` | Stored | Applies `config`, if there is one. |
+| `400` / `422` | Malformed message | Logs it and drops the message. Retrying wouldn't help. |
+| `401` / `403` | Wrong or missing API key | Logs it and keeps measuring. Tries again once a minute. |
+| `413` | Message too large | Resends without `devices`. |
+| `5xx`, timeout, no Wi-Fi | Server or network problem | **Keeps the message** (up to 720 messages, about 1 hour at 5 s) and resends queued messages oldest first with the next successful POST. Drops the oldest when full. |
 
 ---
 
-## 2. What the server does with the two boards' messages
+## 3. Webapp ↔ server
 
-For each 10 s window, the server takes both boards' messages and, for every `id`:
+These endpoints are for the webapp, not the board. They use the same `X-API-Key` header.
 
-1. Takes its RSSI from each board that heard it. A board that didn't hear it counts as −100.
-2. Adds each board's calibration offset (see below).
-3. The device is **in the room** if `room_rssi > outside_rssi` **and** `room_rssi ≥ threshold_dbm`.
-
-Example for one window:
-
-| `id` | `unoq-room` | `unoq-outside` | Result |
-|---|---|---|---|
-| `a3f9c2e1b7d04e12` | −52 | −78 | in the room |
-| `7c41d09a5e2bf830` | −61.5 | — | in the room |
-| `e09b44c1aa7f2d65` | −73 | −55 | outside (heard more strongly in the corridor) |
-| `5d20f7b39c18aa04` | −80 | −84 | not counted (below the −75 threshold) |
-
-→ `devices_in_room = 2`, `estimated_people = round(2 × people_factor)`.
-
-If only one board's message arrived for a window, the server uses that board's `device_count` and marks the result `"quality": "single_sensor"`.
-
-**Calibration (once, at setup):** put the same phone halfway between the two boards for a minute. The difference in average RSSI between the boards is the offset. Add it to the weaker board so both boards are compared fairly. `people_factor` (default 0.7) is calibrated against a real headcount.
-
----
-
-## 3. Server → webapp / CO₂ model
-
-### Latest occupancy: `GET /api/v1/occupancy/latest`
+### Latest count: `GET /ingest/data?device=uno-q-1&limit=1` (exists already)
 
 ```json
-{
-  "room": "lab-3",
-  "ts": "2026-11-07T17:20:10Z",
-  "devices_in_room": 41,
-  "estimated_people": 29,
-  "quality": "two_sensors",
-  "sensors": {
-    "unoq-room":    { "online": true, "last_seen": "2026-11-07T17:20:10Z", "threshold_dbm": -75 },
-    "unoq-outside": { "online": true, "last_seen": "2026-11-07T17:20:10Z", "threshold_dbm": -75 }
+[
+  {
+    "id": 2,
+    "device": "uno-q-1",
+    "ts": "2026-11-07T18:20:05Z",
+    "received_at": "2026-11-07T18:20:05.412Z",
+    "data": { "people": 29, "devices_in_range": 41, "...": "..." }
   }
-}
+]
 ```
 
-A board is `online: false` if nothing has arrived from it for 3 intervals (30 s).
+A board counts as **offline** if its last `received_at` is older than `3 × interval_s`.
 
-### History for the CO₂ model: `GET /api/v1/occupancy?from=…&to=…&step=60`
+### Read settings: `GET /ingest/config/uno-q-1` (new)
+
+Returns the same `config` object the board gets.
+
+### Change settings: `PUT /ingest/config/uno-q-1` (new)
+
+Send only the fields to change:
 
 ```json
-{
-  "room": "lab-3",
-  "step_s": 60,
-  "points": [
-    { "ts": "2026-11-07T17:00:00Z", "estimated_people": 24 },
-    { "ts": "2026-11-07T17:01:00Z", "estimated_people": 26 },
-    { "ts": "2026-11-07T17:02:00Z", "estimated_people": 27 }
-  ]
-}
+{ "threshold_dbm": -40, "window_s": 6, "interval_s": 1 }
 ```
 
-`step` averages the 10 s windows into larger steps (e.g. 60 s), which is the time step the CO₂ model uses.
-
-### Change a board's settings: `PUT /api/v1/sensors/{sensor_id}/config`
-
-```json
-{ "threshold_dbm": -70, "interval_s": 10, "enabled": true }
-```
-
-The server increments `config_version`. The board picks the change up on its next POST, within one interval.
+The server validates them against the table above (`422` if invalid), increases `config_version`, and returns the full new `config`.
+The board picks the change up on its next POST, so within one `interval_s`.
 
 ---
 
-## 4. Try it with curl
+## 4. Example exchange
 
-Pretend to be the room board:
+1. **Room mode.** The board sends `people: 29, devices_in_range: 41` with `settings.threshold_dbm: -75`. The server replies `stored: 1` with `config_version: 3` (no change).
+2. **Switch to demo mode.** The webapp sends `PUT /ingest/config/uno-q-1 {"threshold_dbm": -40, "window_s": 6, "interval_s": 1}`. The server moves to `config_version: 4`.
+3. **Next POST, within 5 s.** The board still sends its old-config count (`config_version: 3`). The reply carries `config_version: 4`, and the board applies it.
+4. **Following POSTs, now every 1 s.** The board sends `config_version: 4`, `devices_in_range: 0`. A judge puts a phone on the board, and the next POST says `devices_in_range: 1`. The LED matrix and the webapp both show it within about 1–2 s.
 
-```bash
-curl -X POST https://hackaburger.example.com/api/v1/readings \
-  -H "Authorization: Bearer dev-token-room" \
-  -H "Content-Type: application/json" \
-  -d '{"sensor_id":"unoq-room","seq":1,"window_start":"2026-11-07T17:20:00Z","window_end":"2026-11-07T17:20:10Z","threshold_dbm":-75,"device_count":2,"heard_total":3,"devices":[{"id":"a3f9c2e1b7d04e12","rssi":-52,"n":9},{"id":"e09b44c1aa7f2d65","rssi":-73,"n":2}]}'
-```
-
-Then the corridor board for the same window:
+## 5. Try it with curl
 
 ```bash
-curl -X POST https://hackaburger.example.com/api/v1/readings \
-  -H "Authorization: Bearer dev-token-outside" \
-  -H "Content-Type: application/json" \
-  -d '{"sensor_id":"unoq-outside","seq":1,"window_start":"2026-11-07T17:20:00Z","window_end":"2026-11-07T17:20:10Z","threshold_dbm":-75,"device_count":1,"heard_total":2,"devices":[{"id":"e09b44c1aa7f2d65","rssi":-55,"n":6},{"id":"a3f9c2e1b7d04e12","rssi":-78,"n":3}]}'
+curl -X POST https://hackaburger.cch-uk.tech/ingest/data \
+  -H "X-API-Key: $INGEST_API_KEY" -H "Content-Type: application/json" \
+  -d '{"device":"uno-q-1","ts":"2026-11-07T18:20:05Z","data":{"people":1,"devices_in_range":1,"heard_total":3,"config_version":1,"settings":{"threshold_dbm":-75,"window_s":30,"people_factor":0.7},"devices":[{"id":"a3f9c2e1b7d04e12","rssi":-52,"n":9}]}}'
 ```
-
-`GET /api/v1/occupancy/latest` should now report `devices_in_room: 1`. Only `a3f9c2e1b7d04e12` is in the room, and `e09b44c1aa7f2d65` is heard more strongly in the corridor.
 
 ## Open questions for the team
 
-- Who hosts the server, and where (hosted service or laptop with a tunnel)?
-- Room name and IDs: one room for the demo, or should `room` come from server config per board?
-- Does the CO₂ model want `estimated_people` or raw `devices_in_room` (and apply its own factor)?
-- How long to keep history? One SQLite table of 10 s windows is about 8,640 rows per board per day, which is fine.
+- Does the server accept nested lists in `data`, and what's its size limit? This affects `send_devices`.
+- Who builds `/ingest/config` and the `config` reply?
+- Should the webapp and CO₂ model use `people` (board's estimate) or recalculate from `devices` with their own factor?

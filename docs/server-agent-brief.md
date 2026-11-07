@@ -83,7 +83,7 @@
 | `enabled` | bool | `true` | | `false`: the board keeps checking in but sends no measurements. |
 | `threshold_dbm` | int | −75 | −100 … −30 | **Range:** count a device only if `rssi ≥ threshold_dbm`. |
 | `window_s` | int | 30 | 2 … 300 | How long the board keeps counting a device after it was last heard. |
-| `interval_s` | number | 5 | 1 … 60 | Seconds between board POSTs. |
+| `interval_s` | number | 5 | 1 … 600 | Seconds between board POSTs. |
 | `people_factor` | number | 0.7 | 0.1 … 2.0 | People per counted device. |
 | `send_devices` | bool | `true` | | Whether the board includes `devices`. |
 | `display` | bool | `true` | | Whether the board shows its count on its LED matrix. |

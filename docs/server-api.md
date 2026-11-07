@@ -92,7 +92,7 @@ In a busy venue the board hears 300–500 devices, which makes a message of roug
 | `enabled` | bool | `true` | | `false`: the board keeps checking in every `interval_s` but sends no measurements (`people` is `null`, no `devices`). |
 | `threshold_dbm` | int | `-75` | `-100` … `-30` | **The range** for the board's own count (`devices_in_range`, `people`, LED display). Only devices at least this strong are counted. Does **not** filter `devices`. See the table below. |
 | `window_s` | int | `30` | `2` … `300` | A device stays counted this long after it was last heard. Short = reacts fast, but the count jumps. Long = stable. |
-| `interval_s` | number | `5` | `1` … `60` | Seconds between POSTs, and so also how often the LED display updates. |
+| `interval_s` | number | `5` | `1` … `600` | Seconds between POSTs, and so also how often the LED display updates. Use 300 (5 min) while the backend is in development. |
 | `people_factor` | number | `0.7` | `0.1` … `2.0` | People per device. Calibrate against a real headcount. |
 | `send_devices` | bool | `true` | | Whether to include the raw `devices` list (all devices heard). |
 | `display` | bool | `true` | | Show `devices_in_range` on the LED matrix. |

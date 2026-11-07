@@ -132,7 +132,6 @@
     infiltrationACH: 0.25,     // Windows closed baseline air changes/hr
     kFlow: 350.0,              // Empirical open window flow constant m³/(h·m²)
     arduinoBleInterval: 2.4,   // Admin-adjustable BLE packet interval (seconds)
-    showGroundTruth: true,
 
     // Dynamic array of windows with individual size (m²) and open status
     windows: [
@@ -248,7 +247,6 @@
       Math.round(cNow * 0.95),
       cNow
     ];
-    var groundTruth = past.map(function (v, i) { return v + (i % 2 === 0 ? 18 : -14); });
 
     var dtSteps = [0.25, 0.25, 0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 1.0];
     var noIntervention = [cNow];
@@ -282,7 +280,6 @@
 
     return {
       pastSeries: past.concat(Array(9).fill(null)),
-      groundTruthSeries: groundTruth.concat(Array(9).fill(null)),
       forecastSeries: Array(8).fill(null).concat(noIntervention),
       upperSeries: Array(8).fill(null).concat(upperSigma),
       lowerSeries: Array(8).fill(null).concat(lowerSigma),

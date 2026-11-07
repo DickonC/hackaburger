@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAELUM — Presentation system</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Corporate slide system for Caelum, taken from the room view and the ops console.">
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #F8FAFC;
+      --white: #FFFFFF;
+      --well: #F1F5F9;
+      --line: #E2E8F0;
+      --slate: #94A3B8;
+      --tick: #64748B;
+      --caption: #475569;
+      --body: #334155;
+      --ink: #0F172A;
+
+      --fresh: #22C55E;
+      --fresh-ink: #15803D;
+      --fresh-wash: #DCFCE7;
+      --warm: #65A30D;
+      --warm-ink: #4D7C0F;
+      --warm-wash: #ECFCCB;
+      --sky: #0EA5E9;
+      --sky-ink: #0369A1;
+      --sky-wash: #E0F2FE;
+      --amber: #F59E0B;
+      --amber-ink: #B45309;
+      --amber-on: #3b2300;
+      --amber-wash: #FEF3C7;
+      --bad: #EF4444;
+      --bad-ink: #B91C1C;
+      --bad-wash: #FEE2E2;
+
+      --display: "Cabinet Grotesk", Aptos, "Segoe UI", sans-serif;
+      --sans: "General Sans", Aptos, "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
+
+      --sheet: min(1120px, calc(100% - 48px));
+      --measure: 66ch;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 18px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1, h2, h3 {
+      font-family: var(--display);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.02;
+      text-wrap: balance;
+    }
+    p { text-wrap: pretty; }
+    a { color: var(--sky-ink); }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 2px solid var(--sky-ink); outline-offset: 3px; }
+    code, .mono {
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+    }
+
+    .sheet {
+      width: var(--sheet);
+      margin-inline: auto;
+    }
+    .block {
+      padding-block: clamp(64px, 8vw, 104px);
+    }
+    .block + .block { padding-top: 0; }
+    .lead {
+      max-width: var(--measure);
+      color: var(--body);
+      font-size: 20px;
+      line-height: 1.45;
+    }
+    .lead + .lead { margin-top: 14px; }
+    h2 {
+      font-size: clamp(36px, 5vw, 56px);
+      margin-bottom: 18px;
+    }
+    .note {
+      margin-top: 14px;
+      max-width: var(--measure);
+      color: var(--caption);
+      font-size: 16px;
+    }
+
+    /* ---------- Cover master ---------- */
+    .cover {
+      background: var(--ink);
+      color: var(--white);
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(28px, 4vw, 64px);
+    }
+    .cover-top, .cover-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .wordmark {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: 0.04em;
+      line-height: 1;
+    }
+    .wordmark svg { display: block; }
+    .cover-meta {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: #CBD5E1;
+    }
+    .cover-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding-block: clamp(48px, 8vh, 96px) clamp(28px, 5vh, 48px);
+      max-width: 680px;
+    }
+    .sky-rule {
+      width: 72px;
+      height: 3px;
+      background: var(--sky);
+      border: 0;
+      margin: 0 0 28px;
+      transform-origin: left center;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .sky-rule { animation: rule-in 700ms cubic-bezier(.16, 1, .3, 1) both; }
+    }
+    @keyframes rule-in {
+      from { transform: scaleX(0.15); }
+      to { transform: scaleX(1); }
+    }
+    .cover h1 {
+      font-size: clamp(48px, 7vw, 84px);
+      color: var(--white);
+      max-width: 5.4em;
+    }
+    .cover-deck {
+      margin-top: 22px;
+      max-width: 42ch;
+      color: #E2E8F0;
+      font-size: clamp(18px, 2vw, 22px);
+      line-height: 1.4;
+    }
+    .cover-bottom { color: #CBD5E1; font-size: 15px; }
+
+    /* ---------- Neutral ramp ---------- */
+    .ramp {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      margin-top: 36px;
+      border: 1px solid var(--line);
+    }
+    .swatch {
+      min-height: 148px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 2px;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+    .swatch strong {
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+    }
+    .swatch span { font-family: var(--mono); font-size: 11px; }
+    .swatch em {
+      font-style: normal;
+      font-family: var(--sans);
+      font-size: 13px;
+    }
+
+    /* ---------- Type ---------- */
+    .type-row {
+      padding-block: 26px;
+      border-top: 1px solid var(--line);
+    }
+    .type-row:last-of-type { border-bottom: 1px solid var(--line); }
+    .type-role {
+      margin-bottom: 10px;
+      color: var(--caption);
+      font-size: 14px;
+    }
+    .type-role small {
+      margin-left: 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--caption);
+      white-space: nowrap;
+    }
+    .specimen-cover {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: clamp(40px, 5vw, 60px);
+      letter-spacing: -0.03em;
+      line-height: 0.98;
+    }
+    .specimen-title {
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 32px;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    .specimen-body {
+      max-width: var(--measure);
+      color: var(--body);
+      font-size: 20px;
+      line-height: 1.45;
+    }
+    .specimen-fig {
+      font-family: var(--mono);
+      font-weight: 500;
+      font-size: 44px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .specimen-fig span {
+      font-family: var(--sans);
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--caption);
+      margin-left: 8px;
+    }
+
+    /* ---------- Section master ---------- */
+    .section-master {
+      background: var(--sky-ink);
+      color: var(--white);
+    }
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: clamp(32px, 5vw, 72px);
+      align-items: end;
+      padding-block: clamp(80px, 12vh, 140px);
+    }
+    .section-master h2 {
+      font-size: clamp(48px, 7vw, 88px);
+      color: var(--white);
+      max-width: 14ch;
+    }
+    .section-spec {
+      font-size: 17px;
+      line-height: 1.45;
+      color: var(--white);
+    }
+    .section-spec p + p { margin-top: 12px; }
+    .section-spec strong { font-weight: 600; }
+
+    /* ---------- Hue table ---------- */
+    .hue-table {
+      margin-top: 32px;
+      display: grid;
+      grid-template-columns: minmax(140px, 180px) repeat(3, 1fr) minmax(160px, 220px);
+      border-top: 1px solid var(--line);
+    }
+    .hue-table > * {
+      min-height: 92px;
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+    .hue-head {
+      min-height: 0;
+      padding-block: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--caption);
+      justify-content: flex-end;
+    }
+    .hue-name strong {
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+    .hue-name span, .chip-meta, .step code {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .hue-name span, .when { color: var(--caption); font-size: 14px; }
+    .step code { font-size: 12px; }
+    .step-label { display: none; font-size: 11px; font-weight: 600; }
+    .when { line-height: 1.35; }
+
+    /* ---------- Slide masters ---------- */
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      margin-top: 8px;
+    }
+    .master-label {
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      margin: 28px 0 10px;
+    }
+    .master-label span {
+      display: block;
+      margin-top: 4px;
+      font-family: var(--sans);
+      font-weight: 400;
+      font-size: 15px;
+      color: var(--caption);
+      letter-spacing: 0;
+    }
+    .slide {
+      aspect-ratio: 16 / 9;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 6.5%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .slide h3 {
+      font-size: clamp(18px, 2.1vw, 28px);
+      font-weight: 800;
+      max-width: 18ch;
+    }
+    .slide .rule {
+      width: 36px;
+      height: 3px;
+      background: var(--sky-ink);
+      margin: 10px 0 12px;
+    }
+    .slide p {
+      color: var(--body);
+      font-size: clamp(12px, 1.15vw, 15px);
+      line-height: 1.4;
+      max-width: 42ch;
+    }
+    .slide-foot {
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      color: var(--caption);
+    }
+    .slide-foot b {
+      font-family: var(--mono);
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+    .chart-wrap { flex: 1; min-height: 0; margin-top: 8px; }
+    .chart-wrap svg { width: 100%; height: 100%; display: block; }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin: 6px 0 8px;
+      color: var(--caption);
+      font-size: 11px;
+    }
+    .legend i {
+      display: inline-block;
+      width: 18px;
+      height: 0;
+      border-top-width: 2px;
+      border-top-style: solid;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* ---------- Measures ---------- */
+    .measures {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 48px;
+      margin-top: 28px;
+    }
+    .measures div {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 8px 16px;
+      padding-block: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 16px;
+    }
+    .measures dt { color: var(--caption); }
+    .measures dd { margin: 0; color: var(--ink); }
+    .token {
+      margin-top: 36px;
+      background: var(--well);
+      border: 1px solid var(--line);
+      padding: 20px 22px;
+      overflow-x: auto;
+    }
+    .token pre {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--ink);
+    }
+
+    .close {
+      background: var(--ink);
+      color: #E2E8F0;
+      padding-block: 48px;
+    }
+    .close .sheet {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+    .close strong {
+      font-family: var(--display);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      color: var(--white);
+      font-size: 18px;
+    }
+    .close p { max-width: 46ch; font-size: 15px; }
+
+    @media (max-width: 980px) {
+      .ramp { grid-template-columns: repeat(3, 1fr); }
+      .type-row { display: block; }
+      .section-grid, .pair, .measures { grid-template-columns: 1fr; }
+      .hue-table {
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      .hue-name,
+      .when { grid-column: 1 / -1; min-height: 0; }
+      .hue-head { display: none; }
+      .step-label { display: block; }
+      .section-master h2 { max-width: none; }
+    }
+    @media (max-width: 640px) {
+      .cover-meta { display: none; }
+      .cover-bottom { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .specimen-title { font-size: 26px; }
+      .measures div { grid-template-columns: 1fr; gap: 2px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sky-rule { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="cover">
+    <div class="cover-top">
+      <div class="wordmark">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        CAELUM
+      </div>
+      <div class="cover-meta">Cover master · 16:9</div>
+    </div>
+    <div class="cover-main">
+      <hr class="sky-rule">
+      <h1>Presentation system</h1>
+      <p class="cover-deck">Taken from the room view and the ops console: same colours, larger type, flat slides.</p>
+    </div>
+    <div class="cover-bottom">
+      <span>Ink #0F172A · type #FFFFFF · one sky rule #0EA5E9</span>
+      <span>Left aligned. Margin 0.55 in.</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="sheet block" aria-labelledby="colour-heading">
+      <h2 id="colour-heading">Colour has a job</h2>
+      <p class="lead">Build every slide from ink, paper, and a hairline. Sky is the only colour that may leave a chart: as a rule, as a link, or as a full section field, and always as the dark step, #0369A1.</p>
+      <p class="lead">Green, lime, amber, and red report the air. They follow the same cuts as both views: under 750 ppm, under 1,000, under 1,400, and above. Live, model, simulated, and offline use those same hues.</p>
+
+      <div class="ramp" role="list">
+        <div class="swatch" role="listitem" style="background:#F8FAFC;color:#0F172A"><strong>Paper</strong><span>#F8FAFC</span><em>Slide ground</em></div>
+        <div class="swatch" role="listitem" style="background:#FFFFFF;color:#0F172A;box-shadow:inset 0 0 0 1px #E2E8F0"><strong>White</strong><span>#FFFFFF</span><em>Panels</em></div>
+        <div class="swatch" role="listitem" style="background:#F1F5F9;color:#0F172A"><strong>Well</strong><span>#F1F5F9</span><em>Plot, zebra</em></div>
+        <div class="swatch" role="listitem" style="background:#E2E8F0;color:#0F172A"><strong>Line</strong><span>#E2E8F0</span><em>Rules, axes</em></div>
+        <div class="swatch" role="listitem" style="background:#94A3B8;color:#0F172A"><strong>Slate</strong><span>#94A3B8</span><em>Marks only</em></div>
+        <div class="swatch" role="listitem" style="background:#64748B;color:#FFFFFF"><strong>Tick</strong><span>#64748B</span><em>Axis labels</em></div>
+        <div class="swatch" role="listitem" style="background:#475569;color:#FFFFFF"><strong>Caption</strong><span>#475569</span><em>Secondary</em></div>
+        <div class="swatch" role="listitem" style="background:#334155;color:#FFFFFF"><strong>Body</strong><span>#334155</span><em>Sentences</em></div>
+        <div class="swatch" role="listitem" style="background:#0F172A;color:#FFFFFF"><strong>Ink</strong><span>#0F172A</span><em>Titles, cover</em></div>
+      </div>
+      <p class="note">Slate #94A3B8 is for marks. Tick #64748B stays on chart axes. Sentences are #334155. Titles are ink.</p>
+    </section>
+
+    <section class="sheet block" aria-labelledby="type-heading">
+      <h2 id="type-heading">Three families, already in the product</h2>
+      <p class="lead">Cabinet Grotesk for titles, General Sans for sentences, JetBrains Mono for figures. On a machine without them, Aptos covers both sans roles and Consolas covers figures.</p>
+
+      <div class="type-row">
+        <div class="type-role">Cover title<small>Cabinet Grotesk 800 · 54 pt</small></div>
+        <div class="specimen-cover">The air decides the hour.</div>
+      </div>
+      <div class="type-row">
+        <div class="type-role">Slide title<small>Cabinet Grotesk 700 · 32 pt</small></div>
+        <div class="specimen-title">Open two windows for six minutes.</div>
+      </div>
+      <div class="type-row">
+        <div class="type-role">Body<small>General Sans 400 · 20 pt · #334155</small></div>
+        <p class="specimen-body">The meeting is still seated when the room crosses 1,000 ppm. Six minutes of open window brings the next hour back under the stuffy line.</p>
+      </div>
+      <div class="type-row">
+        <div class="type-role">Figure<small>JetBrains Mono 500 · 28–44 pt</small></div>
+        <div class="specimen-fig">1,000<span>ppm · stuffy</span></div>
+      </div>
+      <p class="note">Body stays at 20 pt so the back row of a seminar room can read it. Captions are 14 pt in #475569. Nothing on a slide goes below 12 pt.</p>
+    </section>
+
+    <section class="section-master" aria-labelledby="section-heading">
+      <div class="sheet section-grid">
+        <div>
+          <h2 id="section-heading">From the room to the hour.</h2>
+        </div>
+        <div class="section-spec">
+          <p><strong>Section master.</strong> Ground #0369A1. Type #FFFFFF. White on this blue passes AA at every size used here.</p>
+          <p>One field per chapter, between content slides. A chapter title and this column of white type. The following slide returns to paper.</p>
+          <p>Bright sky #0EA5E9 is the forecast stroke. This field, and any sentence, uses #0369A1.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sheet block" aria-labelledby="hue-heading">
+      <h2 id="hue-heading">Five hues, three steps</h2>
+      <p class="lead">Bright is a stroke, a bar, or a dot. Ink is the word, including the word sitting on the wash. Wash is a chip or a single row behind a status.</p>
+
+      <div class="hue-table">
+        <div class="hue-head"></div>
+        <div class="hue-head">Bright · marks</div>
+        <div class="hue-head">Ink · words</div>
+        <div class="hue-head">Wash · chips</div>
+        <div class="hue-head">On a slide</div>
+
+        <div class="hue-name"><strong>Fresh</strong><span>Under 750 ppm</span></div>
+        <div class="step" style="background:#22C55E;color:#0F172A"><span class="step-label">Bright</span><code>#22C55E</code></div>
+        <div class="step" style="background:#15803D;color:#FFFFFF"><span class="step-label">Ink</span><code>#15803D</code></div>
+        <div class="step" style="background:#DCFCE7;color:#15803D"><span class="step-label">Wash</span><code>#DCFCE7</code></div>
+        <div class="when">Air now. A live feed. Solid stroke.</div>
+
+        <div class="hue-name"><strong>Warm</strong><span>750–999 ppm</span></div>
+        <div class="step" style="background:#65A30D;color:#0F172A"><span class="step-label">Bright</span><code>#65A30D</code></div>
+        <div class="step" style="background:#4D7C0F;color:#FFFFFF"><span class="step-label">Ink</span><code>#4D7C0F</code></div>
+        <div class="step" style="background:#ECFCCB;color:#4D7C0F"><span class="step-label">Wash</span><code>#ECFCCB</code></div>
+        <div class="when">Settling. The bright step is too light for words.</div>
+
+        <div class="hue-name"><strong>Forecast</strong><span>Not a CO₂ band</span></div>
+        <div class="step" style="background:#0EA5E9;color:#0F172A"><span class="step-label">Bright</span><code>#0EA5E9</code></div>
+        <div class="step" style="background:#0369A1;color:#FFFFFF"><span class="step-label">Ink</span><code>#0369A1</code></div>
+        <div class="step" style="background:#E0F2FE;color:#0369A1"><span class="step-label">Wash</span><code>#E0F2FE</code></div>
+        <div class="when">The future line, dashed. The ink step is also the deck accent.</div>
+
+        <div class="hue-name"><strong>Stuffy</strong><span>1,000–1,399 ppm</span></div>
+        <div class="step" style="background:#F59E0B;color:#3b2300"><span class="step-label">Bright</span><code>#F59E0B</code></div>
+        <div class="step" style="background:#B45309;color:#FFFFFF"><span class="step-label">Ink</span><code>#B45309</code></div>
+        <div class="step" style="background:#FEF3C7;color:#B45309"><span class="step-label">Wash</span><code>#FEF3C7</code></div>
+        <div class="when">Open the windows. Simulated mode. Type on the amber fill is #3b2300.</div>
+
+        <div class="hue-name"><strong>Bad</strong><span>1,400 ppm and over</span></div>
+        <div class="step" style="background:#EF4444;color:#0F172A"><span class="step-label">Bright</span><code>#EF4444</code></div>
+        <div class="step" style="background:#B91C1C;color:#FFFFFF"><span class="step-label">Ink</span><code>#B91C1C</code></div>
+        <div class="step" style="background:#FEE2E2;color:#B91C1C"><span class="step-label">Wash</span><code>#FEE2E2</code></div>
+        <div class="when">Leave or ventilate. An offline feed. Words use the ink step.</div>
+      </div>
+      <p class="note">Status words use the ink step. Bright green, bright sky, and amber are marks. Chart series stay in this order: air now #22C55E solid, windows shut #0EA5E9 dashed, windows open #22C55E dotted.</p>
+    </section>
+
+    <section class="sheet block" aria-labelledby="masters-heading">
+      <h2 id="masters-heading">Content and data</h2>
+      <p class="lead">Two working masters. Both sit on paper, both carry the same footer, and each spends colour once.</p>
+
+      <div class="pair">
+        <div>
+          <h3 class="master-label">Content<span>Title, one sky rule, a paragraph. No chart.</span></h3>
+          <article class="slide" aria-label="Content master specimen">
+            <h3>Open two windows for six minutes.</h3>
+            <div class="rule"></div>
+            <p>The meeting is still seated when the room crosses 1,000 ppm. Six minutes of open window brings the next hour back under the stuffy line.</p>
+            <div class="slide-foot"><span>CAELUM</span><b>4</b></div>
+          </article>
+        </div>
+        <div>
+          <h3 class="master-label">Data<span>Title, the three series, a labeled axis. Specimen, not a reading.</span></h3>
+          <article class="slide" aria-label="Data master specimen">
+            <h3>The next four hours</h3>
+            <div class="legend">
+              <span><i style="border-top-color:#22C55E"></i>Air now</span>
+              <span><i style="border-top-color:#0EA5E9;border-top-style:dashed"></i>Windows shut</span>
+              <span><i style="border-top-color:#22C55E;border-top-style:dotted"></i>Windows open</span>
+            </div>
+            <div class="chart-wrap">
+              <svg viewBox="0 0 640 220" role="img" aria-label="Specimen chart. Air now rises, windows shut keeps rising, windows open falls. A line marks 1,000 ppm.">
+                <line x1="48" y1="20" x2="620" y2="20" stroke="#E2E8F0"/>
+                <line x1="48" y1="70" x2="620" y2="70" stroke="#E2E8F0"/>
+                <line x1="48" y1="120" x2="620" y2="120" stroke="#E2E8F0"/>
+                <line x1="48" y1="170" x2="620" y2="170" stroke="#E2E8F0"/>
+                <line x1="48" y1="108" x2="620" y2="108" stroke="#B45309" stroke-dasharray="4 4"/>
+                <text x="44" y="24" text-anchor="end" fill="#475569" font-family="JetBrains Mono, monospace" font-size="11">1600</text>
+                <text x="44" y="74" text-anchor="end" fill="#475569" font-family="JetBrains Mono, monospace" font-size="11">1200</text>
+                <text x="44" y="112" text-anchor="end" fill="#B45309" font-family="JetBrains Mono, monospace" font-size="11">1000</text>
+                <text x="44" y="174" text-anchor="end" fill="#475569" font-family="JetBrains Mono, monospace" font-size="11">400</text>
+                <path d="M48 168 C 140 160, 200 130, 280 108" fill="none" stroke="#22C55E" stroke-width="2.5"/>
+                <path d="M280 108 C 380 78, 480 42, 600 28" fill="none" stroke="#0EA5E9" stroke-width="2.5" stroke-dasharray="7 5"/>
+                <path d="M280 108 C 380 130, 480 158, 600 168" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-dasharray="1.5 5" stroke-linecap="round"/>
+                <text x="48" y="206" fill="#475569" font-family="JetBrains Mono, monospace" font-size="11">Now</text>
+                <text x="280" y="206" fill="#475569" font-family="JetBrains Mono, monospace" font-size="11">+1 h</text>
+                <text x="560" y="206" fill="#475569" font-family="JetBrains Mono, monospace" font-size="11">+4 h</text>
+              </svg>
+            </div>
+            <div class="slide-foot"><span>CAELUM</span><b>5</b></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="sheet block" aria-labelledby="measure-heading">
+      <h2 id="measure-heading">Measures</h2>
+      <p class="lead">Widescreen, the size PowerPoint and Keynote already open. Slides are flat, square-cornered, and left aligned. Radius, blur, and shadow stay on the product screens.</p>
+      <dl class="measures">
+        <div><dt>Format</dt><dd>13.333 × 7.5 in · 16:9</dd></div>
+        <div><dt>Margin</dt><dd>0.55 in on every edge</dd></div>
+        <div><dt>Grid</dt><dd>12 columns · 0.17 in gutter</dd></div>
+        <div><dt>Footer</dt><dd>1 px #E2E8F0 · wordmark left · number right</dd></div>
+        <div><dt>Cover title</dt><dd>54 pt Cabinet Grotesk ExtraBold, white</dd></div>
+        <div><dt>Slide title</dt><dd>32 pt Cabinet Grotesk Bold, ink</dd></div>
+        <div><dt>Body</dt><dd>20 pt General Sans, #334155</dd></div>
+        <div><dt>Caption</dt><dd>14 pt General Sans, #475569</dd></div>
+        <div><dt>Accent</dt><dd>One sky rule or one section field per slide</dd></div>
+        <div><dt>Wordmark</dt><dd>Clear space equals the height of the mark</dd></div>
+      </dl>
+
+      <div class="token">
+        <pre>/* Caelum presentation tokens — room view + ops console */
+--paper: #F8FAFC;  --white: #FFFFFF;  --well: #F1F5F9;
+--line:  #E2E8F0;  --slate: #94A3B8;  --tick: #64748B;
+--caption: #475569; --body: #334155;  --ink: #0F172A;
+
+--fresh: #22C55E;  --fresh-ink: #15803D;  --fresh-wash: #DCFCE7;
+--warm:  #65A30D;  --warm-ink:  #4D7C0F;  --warm-wash:  #ECFCCB;
+--sky:   #0EA5E9;  --sky-ink:   #0369A1;  --sky-wash:   #E0F2FE;
+--amber: #F59E0B;  --amber-ink: #B45309;  --amber-wash: #FEF3C7;
+--amber-on: #3b2300; /* type sitting on an amber fill */
+--bad:   #EF4444;  --bad-ink:   #B91C1C;  --bad-wash:   #FEE2E2;</pre>
+      </div>
+      <p class="note">Source: the shared custom properties in index.html and admin.html. Thresholds match the colour returned for a CO₂ value in both views.</p>
+    </section>
+  </main>
+
+  <footer class="close">
+    <div class="sheet">
+      <strong>CAELUM</strong>
+      <p>Four masters: cover in ink, section in sky, content on paper, data on paper. Colour after that is a reading, not a theme.</p>
+    </div>
+  </footer>
+</body>
+</html>

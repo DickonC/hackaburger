@@ -188,7 +188,23 @@
     .quiet-metrics .metric:nth-child(odd) { border-right: 1px solid #E2E8F0; }
     .quiet-metrics .metric:nth-child(-n+2) { border-bottom: 1px solid #E2E8F0; }
     .metric.where { display: flex; flex-direction: column; }
-    .where-map { position: relative; flex: 1; min-height: 150px; margin-top: 12px; }
+    .where-map { position: relative; flex: 1; min-height: 180px; margin-top: 12px; }
+    #cadTip {
+      position: absolute; z-index: 5; max-width: 240px;
+      padding: 6px 8px; border-radius: 8px; background: #0F172A; color: #fff;
+      font: 12px/1.35 'JetBrains Mono', ui-monospace, monospace; pointer-events: none;
+      white-space: pre-line;
+    }
+    .heat-ctl:focus-visible { outline: 2px solid #0F172A; outline-offset: 2px; }
+    #heatmapDotsBtn[aria-pressed="true"] { background: #0F172A; color: #fff; border-color: #0F172A; }
+    .heat-board {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 12px; background: #fff;
+    }
+    .heat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .heat-table th, .heat-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #E2E8F0; white-space: nowrap; }
+    .heat-table th { font-weight: 600; color: #475569; cursor: pointer; }
+    .heat-table tr:hover td { background: #F8FAFC; }
     @media (max-width: 799px) {
       .quiet-metrics .metric.where,
       .quiet-metrics .metric.action {
@@ -544,12 +560,31 @@
         <div class="flex items-baseline gap-3">
           <div id="bleCountDisplay" class="metric-num text-inkPrimary">8</div>
           <div class="metric-sub">Booked <strong id="calCountDisplay" class="font-medium text-inkPrimary">12</strong></div>
+          <div id="whereDevices" class="metric-sub" hidden></div>
         </div>
         <div class="where-map cad-grid-bg rounded-xl border border-borderLine overflow-hidden">
           <canvas id="cadTopologyCanvas" class="w-full h-full block"></canvas>
           <div id="cadGlazingLabel" class="absolute top-2 left-3 text-[12px] text-inkMuted pointer-events-none">Windows</div>
+          <div id="cadTip" hidden></div>
         </div>
-        <p class="mt-2 text-[13px] text-inkSecondary">Core vs perimeter <strong id="spatialGradText" class="font-medium text-inkPrimary">+190 ppm</strong></p>
+        <div class="mt-2 flex items-start justify-between gap-3">
+          <p id="whereCaption" class="text-[13px] text-inkSecondary">Core vs perimeter <strong id="spatialGradText" class="font-medium text-inkPrimary">+190 ppm</strong></p>
+          <button id="heatmapDotsBtn" type="button" hidden aria-pressed="false"
+            class="heat-ctl shrink-0 text-[13px] px-2 py-1 rounded-lg bg-white border border-borderLine text-inkPrimary cursor-pointer">Devices</button>
+        </div>
+        <div id="heatmapEdge" hidden class="mt-3">
+          <div class="flex items-center justify-between gap-2 text-sm mb-1.5">
+            <label class="flex items-center gap-2 text-inkSecondary cursor-pointer">
+              <input id="heatEdgeAuto" type="checkbox" checked class="heat-ctl">
+              Auto
+            </label>
+            <span class="text-inkSecondary">Room edge <strong id="heatEdgeVal" class="text-inkPrimary font-medium">−85 dBm</strong></span>
+          </div>
+          <input id="heatEdgeSlider" type="range" min="-100" max="-40" step="1" value="-85" class="inst-slider heat-ctl w-full" aria-label="Room edge">
+          <p class="mt-1.5 text-[13px] text-inkSecondary">Auto follows the room size. Left includes people outside. Right can miss the corners.</p>
+        </div>
+        <p id="heatmapDevBanner" hidden class="mt-2 text-[13px] rounded-lg px-2.5 py-1.5" style="background:#FEF3C7;color:#92400E">Dev mode: updates every 5 min. Switch to Live in Room setup.</p>
+        <p id="heatmapWarnings" hidden class="mt-1 text-[13px] text-inkSecondary"></p>
       </div>
 
       <div id="kpiControlCard" class="metric action">
@@ -578,10 +613,6 @@
           <h2 id="forecastTitle" class="text-xl font-semibold text-inkPrimary" style="font-family:'Cabinet Grotesk',sans-serif;letter-spacing:-0.02em">Next 4 hours</h2>
           <p class="text-sm text-inkSecondary mt-1">Air from the people expected in the room, and what opening the windows would do.</p>
         </div>
-        <label class="flex items-center gap-2 text-sm text-inkPrimary cursor-pointer select-none">
-          <input type="checkbox" id="sensorCheckbox" class="accent-tealOptimal cursor-pointer" checked>
-          Compare with a sensor
-        </label>
       </div>
       <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-inkSecondary mb-3">
         <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 inline-block" style="background:#22C55E"></span> Air now</span>
@@ -646,6 +677,86 @@
       <summary>Room setup</summary>
       <div class="p-5 sm:p-6 space-y-8">
 
+        <div id="heatmapSetup" hidden>
+          <div class="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+            <h3 class="text-lg font-semibold text-inkPrimary" style="font-family:'Cabinet Grotesk',sans-serif">Four corner boards</h3>
+            <span id="heatStatus" class="text-sm text-inkSecondary" role="status"></span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">Width, board 1 to 2</span></div>
+              <input id="heatWidth" type="number" min="1" max="100" step="0.1" value="8" class="heat-ctl w-full bg-canvas border border-borderLine rounded-lg px-2 py-1.5 text-inkPrimary" aria-label="Room width in metres">
+            </div>
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">Length, board 1 to 4</span></div>
+              <input id="heatLength" type="number" min="1" max="100" step="0.1" value="6" class="heat-ctl w-full bg-canvas border border-borderLine rounded-lg px-2 py-1.5 text-inkPrimary" aria-label="Room length in metres">
+            </div>
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">LED range</span><span id="heatLedVal" class="text-inkPrimary font-medium">−75 dBm</span></div>
+              <input id="heatLedSlider" type="range" min="-100" max="-30" step="1" value="-75" class="inst-slider heat-ctl w-full" aria-label="LED range">
+              <p class="mt-1.5 text-[13px] text-inkSecondary">Only the number on the boards. The map and the people count ignore it. Boards pick it up at their next update.</p>
+            </div>
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">Devices per person</span></div>
+              <input id="heatDpp" type="number" min="0.5" max="4" step="0.1" value="1.2" class="heat-ctl w-full bg-canvas border border-borderLine rounded-lg px-2 py-1.5 text-inkPrimary" aria-label="Devices per person">
+              <p class="mt-1.5 text-[13px] text-inkSecondary">Earbuds and tags are already left out. How many of the rest does one person carry?</p>
+            </div>
+          </div>
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <button id="heatLiveBtn" type="button" class="heat-ctl text-sm font-medium px-3 py-1.5 rounded-xl bg-inkPrimary text-white">Live (10 s)</button>
+            <button id="heatDevBtn" type="button" class="heat-ctl text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">Dev (5 min)</button>
+            <button id="heatPauseBtn" type="button" class="heat-ctl text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">Pause boards</button>
+            <button id="heatDisplayBtn" type="button" class="heat-ctl text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">LED on</button>
+            <label class="flex items-center gap-2 text-sm text-inkSecondary ml-1">
+              <input id="heatExclude" type="checkbox" checked class="heat-ctl">
+              Ignore accessories and fixed devices
+            </label>
+          </div>
+          <p class="mt-2 text-[13px] text-inkSecondary">Live is what the map needs. A change waits until each board checks in: about 10 seconds in Live, up to 5 minutes in Dev.</p>
+          <div class="mt-4 flex flex-wrap items-end gap-2">
+            <label class="text-sm text-inkSecondary">People you counted
+              <input id="heatHeadcount" type="number" min="1" max="500" step="1" class="heat-ctl mt-1 block w-28 bg-canvas border border-borderLine rounded-lg px-2 py-1.5 text-inkPrimary" aria-label="Counted people">
+            </label>
+            <button id="heatCalibrateBtn" type="button" class="heat-ctl text-sm font-medium px-3 py-1.5 rounded-xl bg-tealOptimal text-white">Calibrate with headcount</button>
+            <label class="text-sm text-inkSecondary">Board offsets
+              <select id="heatOffsetsMode" class="heat-ctl mt-1 block bg-canvas border border-borderLine rounded-lg px-2 py-1.5 text-inkPrimary" aria-label="Board offset mode">
+                <option value="auto">Auto</option>
+                <option value="manual">Manual</option>
+              </select>
+            </label>
+          </div>
+          <p id="heatCalibration" class="mt-2 text-[13px] text-inkSecondary"></p>
+          <div id="heatBoardList" class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+          <div id="heatFunnel" class="mt-4 text-sm text-inkSecondary"></div>
+          <div id="heatKinds" class="mt-3 space-y-1.5"></div>
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+            <p id="heatUnplaced" class="text-[13px] text-inkSecondary"></p>
+            <label class="text-sm text-inkSecondary">Kind
+              <select id="heatKindFilter" class="heat-ctl ml-1 bg-canvas border border-borderLine rounded-lg px-2 py-1 text-inkPrimary" aria-label="Filter devices by kind">
+                <option value="">All</option>
+              </select>
+            </label>
+          </div>
+          <div class="mt-2 max-h-64 overflow-auto inst-scroll border border-borderLine rounded-xl">
+            <table class="heat-table" id="heatTable">
+              <thead>
+                <tr>
+                  <th data-sort="id">Id</th>
+                  <th data-sort="kind">Kind</th>
+                  <th data-sort="b1">1</th>
+                  <th data-sort="b2">2</th>
+                  <th data-sort="b3">3</th>
+                  <th data-sort="b4">4</th>
+                  <th data-sort="weakest_dbm">Weakest</th>
+                  <th data-sort="boards_heard">Boards</th>
+                  <th data-sort="status">Status</th>
+                </tr>
+              </thead>
+              <tbody id="heatTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div>
           <div class="flex items-baseline justify-between gap-3 mb-4">
             <h3 class="text-lg font-semibold text-inkPrimary" style="font-family:'Cabinet Grotesk',sans-serif">Adjust the room</h3>
@@ -680,7 +791,7 @@
           <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-inkSecondary">
             <span class="flex items-center gap-2"><span id="flushTimerPulse" class="w-2 h-2 rounded-full bg-inkMuted"></span><span id="flushTimerStatusLabel">Windows closed</span></span>
             <span>Glass <strong id="totalRoomWinArea" class="text-tealOptimal font-medium">2.0 m²</strong></span>
-            <button id="weClosedThemBtn" type="button" class="hidden text-sm px-3 py-1.5 rounded-xl bg-coralCrit text-white">We closed them</button>
+            <button id="weClosedThemBtn" type="button" class="hidden text-sm px-3 py-1.5 rounded-xl bg-coralCrit text-white">I closed them</button>
           </div>
           <p class="mt-4 text-sm text-inkMuted">
             CO₂ generated <span id="currentGDisplay" class="text-inkPrimary">128 L/h</span>
@@ -698,7 +809,7 @@
             </div>
           </div>
           <div id="bleLogPane" class="inst-well overflow-hidden">
-            <div class="p-3 bg-white border-b border-borderLine space-y-2 text-sm">
+            <div id="singleBoardControls" class="p-3 bg-white border-b border-borderLine space-y-2 text-sm">
               <div class="flex items-center justify-between gap-2">
                 <label class="flex items-center gap-2 text-inkSecondary">
                   Node
@@ -1007,7 +1118,7 @@
         }
         if (activeTimerBadge) activeTimerBadge.classList.remove('hidden');
         if (cardFlushBtn) {
-          cardFlushBtn.innerText = 'WE CLOSED THEM (STOP)';
+          cardFlushBtn.innerText = 'I CLOSED THEM (STOP)';
           cardFlushBtn.className = 'text-[10px] font-mono-tabular font-bold px-2 py-0.5 rounded bg-coralCrit text-canvas border border-coralCrit hover:bg-coralCrit/80 transition cursor-pointer shadow';
         }
         if (cardSessionReport) {
@@ -1368,17 +1479,6 @@
               pointBorderWidth: 2.5
             },
             {
-              label: 'Aranet4 NDIR Ground Truth',
-              data: series.groundTruthSeries,
-              borderColor: '#64748B',
-              borderWidth: 1.5,
-              borderDash: [3, 3],
-              pointRadius: 2,
-              pointBackgroundColor: '#64748B',
-              tension: 0.2,
-              hidden: !STATE.showGroundTruth
-            },
-            {
               label: '4h Forecast (Unmitigated)',
               data: series.forecastSeries,
               borderColor: '#0EA5E9',
@@ -1537,18 +1637,564 @@
     }
 
     /* =====================================================================
-       4. SPATIAL 2D CAD TOPOLOGY & BLE PERIMETER RENDERER
+       4. SPATIAL MAP — live heatmap when the room uses the four boards,
+          otherwise the simulated floor plan
        ===================================================================== */
     const cadCanvas = document.getElementById('cadTopologyCanvas');
     const cadCtx = cadCanvas.getContext('2d');
     let flowTick = 0;
+    let heatSprite = null;
+    let heatSpriteKey = '';
+    let cadHits = [];
+    let heatSort = { key: 'status', dir: 1 };
+    let lastHeatSig = '';
+    let lastDebugTs = '';
+    let lastCaptionAt = 0;
+    const HEAT_BOARDS = ['uno-q-1', 'uno-q-2', 'uno-q-3', 'uno-q-4'];
+    const HEAT_KINDS = {
+      apple_device: 'Apple', phone: 'Phone', computer: 'Laptop', wearable: 'Watch',
+      brand_other: 'Other', unknown: 'Unknown', earbuds: 'Earbuds', tracker: 'Tag',
+      beacon: 'Beacon', fixed: 'Fixed',
+    };
+    const HEAT_CORNERS = {
+      top_left: 'Top left', top_right: 'Top right', bottom_right: 'Bottom right', bottom_left: 'Bottom left',
+    };
 
     function resizeCadCanvas() {
       cadCanvas.width = cadCanvas.offsetWidth || 380;
       cadCanvas.height = cadCanvas.offsetHeight || 165;
     }
 
+    function heatmapLive() {
+      const live = window.hackaburgerBackend;
+      if (!live || !live.enabled || live.forceSim || live.mode !== 'live' || !live.heatmap) return null;
+      if (Caelum.demo.mode() !== 'none') return null;
+      const room = live.serverRooms && live.serverRooms[STATE.currentRoomId];
+      if (!room || room.device !== 'heatmap') return null;
+      return live;
+    }
+
+    function dbmText(v) {
+      if (v == null || Number.isNaN(Number(v))) return '—';
+      return `${Math.round(Number(v))} dBm`.replace('-', '−');
+    }
+
+    function kindLabel(k) {
+      return HEAT_KINDS[k] || k || 'Unknown';
+    }
+
+    function boardNumber(id) {
+      const n = parseInt(String(id).split('-').pop(), 10);
+      return n >= 1 && n <= 4 ? n : 1;
+    }
+
+    function heatmapSprite(latest) {
+      const grid = latest.heatmap && latest.heatmap.values;
+      if (!grid || !grid.length || !grid[0] || !grid[0].length) return null;
+      const rows = grid.length;
+      const cols = grid[0].length;
+      const key = `${latest.ts}:${latest.heatmap.max_value}:${cols}x${rows}`;
+      if (key === heatSpriteKey && heatSprite) return heatSprite;
+      const off = document.createElement('canvas');
+      off.width = cols;
+      off.height = rows;
+      const ctx = off.getContext('2d');
+      const img = ctx.createImageData(cols, rows);
+      const max = latest.heatmap.max_value > 0 ? latest.heatmap.max_value : 1;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const t = Math.max(0, Math.min(1, (grid[r][c] || 0) / max));
+          const i = (r * cols + c) * 4;
+          img.data[i] = 14;
+          img.data[i + 1] = 165;
+          img.data[i + 2] = 233;
+          img.data[i + 3] = Math.round(Math.pow(t, 0.85) * 220);
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      heatSprite = off;
+      heatSpriteKey = key;
+      return off;
+    }
+
+    function letterbox(w, h, widthM, lengthM) {
+      const padX = 28;
+      const padY = 26;
+      const availW = Math.max(20, w - padX * 2);
+      const availH = Math.max(20, h - padY * 2);
+      const aspect = widthM / Math.max(lengthM, 0.1);
+      let dw = availW;
+      let dh = dw / aspect;
+      if (dh > availH) {
+        dh = availH;
+        dw = dh * aspect;
+      }
+      return { x: (w - dw) / 2, y: (h - dh) / 2, dw, dh };
+    }
+
+    function renderHeatmapMap(live) {
+      const dwPx = cadCanvas.offsetWidth || 380;
+      const dhPx = cadCanvas.offsetHeight || 180;
+      if (cadCanvas.width !== dwPx || cadCanvas.height !== dhPx) {
+        cadCanvas.width = dwPx;
+        cadCanvas.height = dhPx;
+      }
+      const w = cadCanvas.width;
+      const h = cadCanvas.height;
+      const latest = live.heatmap;
+      const room = latest.room || { width_m: 8, length_m: 6 };
+      const box = letterbox(w, h, room.width_m || 8, room.length_m || 6);
+      cadHits = [];
+      cadCanvas.setAttribute('aria-label', 'Approximate map of where people are in the room');
+      const glaze = byId('cadGlazingLabel');
+      if (glaze) glaze.hidden = true;
+      cadCtx.clearRect(0, 0, w, h);
+      cadCtx.fillStyle = 'rgba(255,255,255,0.72)';
+      cadCtx.fillRect(box.x, box.y, box.dw, box.dh);
+      const sprite = heatmapSprite(latest);
+      if (sprite) {
+        cadCtx.save();
+        cadCtx.beginPath();
+        cadCtx.rect(box.x, box.y, box.dw, box.dh);
+        cadCtx.clip();
+        cadCtx.imageSmoothingEnabled = true;
+        cadCtx.imageSmoothingQuality = 'high';
+        cadCtx.drawImage(sprite, box.x, box.y, box.dw, box.dh);
+        cadCtx.restore();
+      } else {
+        cadCtx.fillStyle = '#64748B';
+        cadCtx.font = '13px "General Sans", system-ui, sans-serif';
+        cadCtx.textAlign = 'center';
+        cadCtx.textBaseline = 'middle';
+        cadCtx.fillText('Waiting for the boards', box.x + box.dw / 2, box.y + box.dh / 2);
+      }
+      cadCtx.strokeStyle = '#94A3B8';
+      cadCtx.lineWidth = 1.5;
+      cadCtx.strokeRect(box.x, box.y, box.dw, box.dh);
+
+      const showDots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
+      const debugDevices = showDots && live.heatmapDebug ? live.heatmapDebug.devices || [] : [];
+      debugDevices.forEach((d) => {
+        if (d.x == null || d.y == null) return;
+        const px = box.x + (d.x / room.width_m) * box.dw;
+        const py = box.y + (d.y / room.length_m) * box.dh;
+        const rejected = d.status !== 'in_room';
+        let color = '#0369A1';
+        if (d.reason === 'outside_edge') color = '#F59E0B';
+        else if (d.reason === 'too_brief') color = '#CA8A04';
+        else if (rejected) color = '#94A3B8';
+        cadCtx.beginPath();
+        cadCtx.arc(px, py, rejected ? 4 : 4.5, 0, Math.PI * 2);
+        cadCtx.fillStyle = rejected ? 'rgba(255,255,255,0.85)' : color;
+        cadCtx.fill();
+        cadCtx.lineWidth = 1.5;
+        cadCtx.strokeStyle = color;
+        cadCtx.stroke();
+        cadHits.push({ x: px, y: py, r: 8, tip: deviceTip(d) });
+      });
+
+      HEAT_BOARDS.forEach((id) => {
+        const b = latest.boards && latest.boards[id];
+        if (!b) return;
+        const px = box.x + (b.x / room.width_m) * box.dw;
+        const py = box.y + (b.y / room.length_m) * box.dh;
+        const online = !!b.online;
+        cadCtx.beginPath();
+        cadCtx.arc(px, py, 9, 0, Math.PI * 2);
+        cadCtx.fillStyle = online ? '#15803D' : '#94A3B8';
+        cadCtx.fill();
+        cadCtx.fillStyle = '#fff';
+        cadCtx.font = '10px "JetBrains Mono", monospace';
+        cadCtx.textAlign = 'center';
+        cadCtx.textBaseline = 'middle';
+        cadCtx.fillText(String(boardNumber(id)), px, py + 0.5);
+        const dots = '●'.repeat(boardNumber(id));
+        const inward = px < box.x + box.dw / 2;
+        cadCtx.fillStyle = online ? '#15803D' : '#64748B';
+        cadCtx.font = '9px "General Sans", system-ui, sans-serif';
+        cadCtx.textAlign = inward ? 'left' : 'right';
+        cadCtx.textBaseline = 'middle';
+        cadCtx.fillText(dots, inward ? px + 14 : px - 14, py);
+        const heard = b.heard != null ? `${b.heard} heard` : 'no reading';
+        const pending = b.config && b.config.pending ? ' · change pending' : '';
+        const since = !online && b.last_ts ? ` · offline since ${new Date(b.last_ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '';
+        cadHits.push({ x: px, y: py, r: 12, tip: `Board ${boardNumber(id)} · ${heard}${pending}${since}` });
+      });
+
+      const now = Date.now();
+      if (now - lastCaptionAt > 900) {
+        lastCaptionAt = now;
+        paintHeatmapCaption(live);
+      }
+      requestAnimationFrame(renderCadTopology);
+    }
+
+    function deviceTip(d) {
+      const rssi = HEAT_BOARDS.map((id, i) => `${i + 1} ${d.rssi && d.rssi[id] != null ? Math.round(d.rssi[id]) : '—'}`).join('  ');
+      const why = d.reason ? ` · ${d.reason.replaceAll('_', ' ')}` : '';
+      return `${(d.id || '').slice(0, 8)} · ${kindLabel(d.kind)}${why}\n${rssi}`;
+    }
+
+    function paintHeatmapCaption(live) {
+      const latest = live.heatmap;
+      const ageBase = latest.age_s != null ? latest.age_s : 0;
+      const extra = live.lastUpdate ? (Date.now() - live.lastUpdate) / 1000 : 0;
+      const age = Math.max(0, Math.round(ageBase + extra));
+      const cap = byId('whereCaption');
+      if (cap.firstChild) cap.firstChild.textContent = 'Approximate, ±2–3 m · updated ';
+      const strong = byId('spatialGradText');
+      if (strong) strong.textContent = `${age}s ago`;
+      const devs = byId('whereDevices');
+      if (latest.devices_in_room == null) {
+        devs.hidden = true;
+      } else {
+        devs.hidden = false;
+        devs.textContent = `${latest.devices_in_room} devices`;
+      }
+    }
+
+    function fieldFocused(id) {
+      const el = document.activeElement;
+      return !!(el && el.id === id);
+    }
+
+    function setPressed(btn, on) {
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.classList.toggle('bg-inkPrimary', on);
+      btn.classList.toggle('text-white', on);
+      btn.classList.toggle('border-borderLine', !on);
+      btn.classList.toggle('bg-white', !on);
+      btn.classList.toggle('text-inkPrimary', !on);
+    }
+
+    function syncHeatmapChrome() {
+      const live = heatmapLive();
+      const setup = byId('heatmapSetup');
+      const edge = byId('heatmapEdge');
+      const dotsBtn = byId('heatmapDotsBtn');
+      const banner = byId('heatmapDevBanner');
+      const warnings = byId('heatmapWarnings');
+      const single = byId('singleBoardControls');
+      if (!live) {
+        setup.hidden = true;
+        edge.hidden = true;
+        dotsBtn.hidden = true;
+        banner.hidden = true;
+        warnings.hidden = true;
+        if (single) single.hidden = false;
+        const devs = byId('whereDevices');
+        if (devs) devs.hidden = true;
+        const cap = byId('whereCaption');
+        if (cap && cap.firstChild && cap.firstChild.textContent.indexOf('Approximate') === 0) {
+          cap.firstChild.textContent = 'Core vs perimeter ';
+        }
+        if (window.hackaburgerBackend && window.hackaburgerBackend.setHeatmapDebug) {
+          window.hackaburgerBackend.setHeatmapDebug(false);
+        }
+        return;
+      }
+      setup.hidden = false;
+      edge.hidden = false;
+      dotsBtn.hidden = false;
+      if (single && !single.hidden) {
+        const stream = byId('blePacketStream');
+        if (stream) stream.innerHTML = '';
+      }
+      if (single) single.hidden = true;
+      const latest = live.heatmap;
+      const cfg = live.heatmapConfig;
+      banner.hidden = latest.mode !== 'dev';
+      const warn = (latest.warnings || []).filter((w) => !/dev mode/i.test(w));
+      warnings.hidden = warn.length === 0;
+      warnings.textContent = warn.join(' ');
+      paintHeatmapCaption(live);
+
+      const cal = latest.calibration || {};
+      if (!fieldFocused('heatEdgeSlider')) {
+        byId('heatEdgeSlider').value = String(Math.round(cal.edge_dbm != null ? cal.edge_dbm : -85));
+      }
+      if (!fieldFocused('heatEdgeAuto')) byId('heatEdgeAuto').checked = cal.edge_mode !== 'manual';
+      byId('heatEdgeVal').textContent = dbmText(byId('heatEdgeSlider').value);
+
+      if (cfg) {
+        if (!fieldFocused('heatWidth')) byId('heatWidth').value = cfg.room.width_m;
+        if (!fieldFocused('heatLength')) byId('heatLength').value = cfg.room.length_m;
+        if (!fieldFocused('heatDpp')) byId('heatDpp').value = cfg.people.devices_per_person;
+        if (!fieldFocused('heatExclude')) {
+          const kinds = (cfg.filter && cfg.filter.exclude_kinds) || [];
+          byId('heatExclude').checked = kinds.length > 0;
+        }
+        if (!fieldFocused('heatOffsetsMode')) byId('heatOffsetsMode').value = cfg.offsets_mode || 'auto';
+        const offsets = cal.offsets_db || cfg.offsets_db || {};
+        byId('heatCalibration').textContent = `Edge ${cal.edge_mode || 'auto'} ${dbmText(cal.edge_dbm)}. Offsets `
+          + HEAT_BOARDS.map((id) => `${boardNumber(id)} ${offsets[id] != null ? Number(offsets[id]).toFixed(1) : '0'} dB`).join(', ');
+      }
+      const board1 = latest.boards && latest.boards['uno-q-1'];
+      const led = board1 && board1.config ? board1.config.threshold_dbm : -75;
+      if (!fieldFocused('heatLedSlider')) byId('heatLedSlider').value = String(led);
+      byId('heatLedVal').textContent = dbmText(byId('heatLedSlider').value);
+      setPressed(byId('heatLiveBtn'), latest.mode === 'live');
+      setPressed(byId('heatDevBtn'), latest.mode === 'dev');
+      const shared = live.heatmapBoard || {};
+      byId('heatPauseBtn').textContent = shared.enabled === false ? 'Resume boards' : 'Pause boards';
+      byId('heatDisplayBtn').textContent = shared.display === false ? 'LED off' : 'LED on';
+      renderHeatBoards(latest);
+      renderHeatFunnel(latest);
+      if (live.heatmapDebug && live.heatmapDebug.ts !== lastDebugTs) {
+        lastDebugTs = live.heatmapDebug.ts;
+        renderHeatTable(live.heatmapDebug);
+      }
+      const sig = `${latest.ts}|${latest.mode}|${(cfg && cfg.people.devices_per_person)}`;
+      if (sig !== lastHeatSig) lastHeatSig = sig;
+      syncDebugPolling();
+    }
+
+    function renderHeatBoards(latest) {
+      const list = byId('heatBoardList');
+      list.innerHTML = HEAT_BOARDS.map((id) => {
+        const b = (latest.boards && latest.boards[id]) || {};
+        const online = !!b.online;
+        const pending = b.config && b.config.pending;
+        const when = b.last_ts ? new Date(b.last_ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—';
+        return `<div class="heat-board">
+          <div>
+            <div class="text-sm text-inkPrimary">${'●'.repeat(boardNumber(id))} ${HEAT_CORNERS[b.corner] || ''}</div>
+            <div class="text-[13px] text-inkSecondary">${online ? 'Online' : 'Offline'} · ${when} · ${b.heard || 0} heard</div>
+          </div>
+          <div class="text-[13px] ${pending ? 'text-amber-800' : 'text-inkSecondary'}">${pending ? 'Pending' : 'Applied'}${b.config ? ' · ' + dbmText(b.config.threshold_dbm) : ''}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderHeatFunnel(latest) {
+      const f = latest.funnel;
+      const el = byId('heatFunnel');
+      if (!f) { el.textContent = 'No snapshot yet.'; return; }
+      el.textContent = `${f.heard} heard → ${f.plausible_people} plausible people → ${f.enough_boards} heard by 3 or more boards → ${f.inside_edge} inside the room edge → ${f.present} present`;
+      const kinds = latest.kinds_in_room || {};
+      const entries = Object.entries(kinds).sort((a, b) => b[1] - a[1]);
+      const max = entries.reduce((m, e) => Math.max(m, e[1]), 1);
+      byId('heatKinds').innerHTML = entries.map(([k, n]) =>
+        `<div class="grid items-center gap-2 text-[13px]" style="grid-template-columns: 88px 1fr auto">
+          <span class="text-inkSecondary">${kindLabel(k)}</span>
+          <span class="h-2 rounded-full bg-sky-100 overflow-hidden"><i class="block h-full bg-sky-500" style="width:${Math.round(100 * n / max)}%"></i></span>
+          <span class="font-mono-tabular text-inkPrimary">${n}</span>
+        </div>`).join('');
+    }
+
+    function renderHeatTable(debug) {
+      const devices = (debug && debug.devices) ? debug.devices.slice() : [];
+      const filter = byId('heatKindFilter').value;
+      const kinds = [...new Set(devices.map((d) => d.kind || 'unknown'))].sort();
+      const sel = byId('heatKindFilter');
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">All</option>' + kinds.map((k) => `<option value="${k}">${kindLabel(k)}</option>`).join('');
+      if (kinds.includes(prev)) sel.value = prev;
+      let rows = devices.filter((d) => !filter || d.kind === filter);
+      const key = heatSort.key;
+      const dir = heatSort.dir;
+      rows.sort((a, b) => {
+        const av = sortValue(a, key);
+        const bv = sortValue(b, key);
+        if (av < bv) return -dir;
+        if (av > bv) return dir;
+        return 0;
+      });
+      const unplaced = devices.filter((d) => d.reason === 'too_few_boards').length;
+      byId('heatUnplaced').textContent = unplaced ? `${unplaced} devices heard by too few boards to place` : '';
+      byId('heatTableBody').innerHTML = rows.map((d) => {
+        const rssi = (i) => {
+          const id = HEAT_BOARDS[i];
+          const v = d.rssi && d.rssi[id];
+          return v == null ? '—' : Math.round(v);
+        };
+        const status = d.status === 'in_room' ? 'In room' : (d.reason || 'rejected').replaceAll('_', ' ');
+        return `<tr>
+          <td class="font-mono-tabular">${(d.id || '').slice(0, 8)}</td>
+          <td>${kindLabel(d.kind)}</td>
+          <td class="font-mono-tabular">${rssi(0)}</td>
+          <td class="font-mono-tabular">${rssi(1)}</td>
+          <td class="font-mono-tabular">${rssi(2)}</td>
+          <td class="font-mono-tabular">${rssi(3)}</td>
+          <td class="font-mono-tabular">${d.weakest_dbm == null ? '—' : Math.round(d.weakest_dbm)}</td>
+          <td class="font-mono-tabular">${d.boards_heard}</td>
+          <td>${status}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function sortValue(d, key) {
+      if (key === 'b1' || key === 'b2' || key === 'b3' || key === 'b4') {
+        const v = d.rssi && d.rssi[HEAT_BOARDS[Number(key.slice(1)) - 1]];
+        return v == null ? -999 : v;
+      }
+      if (key === 'status') return d.status === 'in_room' ? '0' : String(d.reason || 'z');
+      if (key === 'kind') return kindLabel(d.kind);
+      const v = d[key];
+      return v == null ? -999 : v;
+    }
+
+    function syncDebugPolling() {
+      const live = window.hackaburgerBackend;
+      if (!live || typeof live.setHeatmapDebug !== 'function') return;
+      const details = document.querySelector('details.more');
+      const dots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
+      live.setHeatmapDebug(!!heatmapLive() && (!!(details && details.open) || dots));
+    }
+
+    async function heatRun(label, fn) {
+      const status = byId('heatStatus');
+      status.textContent = label;
+      try {
+        await fn();
+        status.textContent = 'Saved';
+      } catch (e) {
+        status.textContent = e.message || 'Save failed';
+      }
+    }
+
+    const heatTimers = {};
+    function heatLater(key, fn) {
+      clearTimeout(heatTimers[key]);
+      heatTimers[key] = setTimeout(fn, 400);
+    }
+
+    function onCadMove(e) {
+      const tip = byId('cadTip');
+      const rect = cadCanvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const x = (e.clientX - rect.left) * (cadCanvas.width / rect.width);
+      const y = (e.clientY - rect.top) * (cadCanvas.height / rect.height);
+      const hit = cadHits.find((h) => (h.x - x) ** 2 + (h.y - y) ** 2 <= h.r * h.r);
+      if (!hit) { tip.hidden = true; return; }
+      tip.hidden = false;
+      tip.textContent = hit.tip;
+      const left = e.clientX - rect.left + 12;
+      const top = e.clientY - rect.top + 12;
+      tip.style.left = `${Math.min(left, rect.width - 160)}px`;
+      tip.style.top = `${Math.min(top, rect.height - 36)}px`;
+    }
+
+    function wireHeatmapControls() {
+      const liveOf = () => window.hackaburgerBackend;
+      byId('heatmapDotsBtn').addEventListener('click', () => {
+        const btn = byId('heatmapDotsBtn');
+        const on = btn.getAttribute('aria-pressed') !== 'true';
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        syncDebugPolling();
+      });
+      document.querySelector('details.more').addEventListener('toggle', syncDebugPolling);
+
+      byId('heatEdgeSlider').addEventListener('input', () => {
+        byId('heatEdgeVal').textContent = dbmText(byId('heatEdgeSlider').value);
+        byId('heatEdgeAuto').checked = false;
+        const v = Number(byId('heatEdgeSlider').value);
+        heatLater('edge', () => {
+          const live = liveOf();
+          if (!live) return;
+          heatRun('Saving edge…', () => live.putHeatmapConfig({ filter: { edge_mode: 'manual', edge_dbm: v } }));
+        });
+      });
+      byId('heatEdgeAuto').addEventListener('change', () => {
+        const live = liveOf();
+        if (!live) return;
+        if (byId('heatEdgeAuto').checked) {
+          heatRun('Saving edge…', () => live.putHeatmapConfig({ filter: { edge_mode: 'auto' } }));
+        } else {
+          const v = Number(byId('heatEdgeSlider').value);
+          heatRun('Saving edge…', () => live.putHeatmapConfig({ filter: { edge_mode: 'manual', edge_dbm: v } }));
+        }
+      });
+      const sendSize = () => {
+        const width_m = Number(byId('heatWidth').value);
+        const length_m = Number(byId('heatLength').value);
+        if (!(width_m >= 1 && width_m <= 100 && length_m >= 1 && length_m <= 100)) {
+          byId('heatStatus').textContent = 'Width and length need to be between 1 and 100 m';
+          return;
+        }
+        const live = liveOf();
+        if (!live) return;
+        heatRun('Saving room…', () => live.putHeatmapConfig({ room: { width_m, length_m } }));
+      };
+      byId('heatWidth').addEventListener('change', sendSize);
+      byId('heatLength').addEventListener('change', sendSize);
+      byId('heatLedSlider').addEventListener('input', () => {
+        byId('heatLedVal').textContent = dbmText(byId('heatLedSlider').value);
+        const threshold_dbm = Math.round(Number(byId('heatLedSlider').value));
+        heatLater('led', () => {
+          const live = liveOf();
+          if (!live) return;
+          heatRun('Saving LED range…', () => live.putHeatmapBoards({ threshold_dbm }));
+        });
+      });
+      byId('heatDpp').addEventListener('change', () => {
+        const devices_per_person = Number(byId('heatDpp').value);
+        const live = liveOf();
+        if (!live || !(devices_per_person >= 0.5 && devices_per_person <= 4)) return;
+        heatRun('Saving…', () => live.putHeatmapConfig({ people: { devices_per_person } }));
+      });
+      byId('heatExclude').addEventListener('change', () => {
+        const live = liveOf();
+        if (!live) return;
+        const exclude_kinds = byId('heatExclude').checked ? ['earbuds', 'tracker', 'beacon', 'fixed'] : [];
+        heatRun('Saving filter…', () => live.putHeatmapConfig({ filter: { exclude_kinds } }));
+      });
+      byId('heatOffsetsMode').addEventListener('change', () => {
+        const live = liveOf();
+        if (!live) return;
+        heatRun('Saving offsets…', () => live.putHeatmapConfig({ offsets_mode: byId('heatOffsetsMode').value }));
+      });
+      byId('heatLiveBtn').addEventListener('click', () => {
+        const live = liveOf();
+        if (!live) return;
+        heatRun('Switching to live…', () => live.putHeatmapMode('live'));
+      });
+      byId('heatDevBtn').addEventListener('click', () => {
+        const live = liveOf();
+        if (!live) return;
+        heatRun('Switching to dev…', () => live.putHeatmapMode('dev'));
+      });
+      byId('heatPauseBtn').addEventListener('click', () => {
+        const live = liveOf();
+        if (!live) return;
+        const enabled = !(live.heatmapBoard && live.heatmapBoard.enabled === false);
+        heatRun(enabled ? 'Pausing…' : 'Resuming…', () => live.putHeatmapBoards({ enabled: !enabled }));
+      });
+      byId('heatDisplayBtn').addEventListener('click', () => {
+        const live = liveOf();
+        if (!live) return;
+        const display = !(live.heatmapBoard && live.heatmapBoard.display === false);
+        heatRun('Saving LED…', () => live.putHeatmapBoards({ display: !display }));
+      });
+      byId('heatCalibrateBtn').addEventListener('click', () => {
+        const live = liveOf();
+        const people = Number(byId('heatHeadcount').value);
+        if (!live || !(people > 0)) {
+          byId('heatStatus').textContent = 'Type how many people are in the room';
+          return;
+        }
+        heatRun('Calibrating…', () => live.calibrateHeadcount(people));
+      });
+      byId('heatTable').querySelectorAll('th').forEach((th) => {
+        th.addEventListener('click', () => {
+          const key = th.dataset.sort;
+          heatSort = { key, dir: heatSort.key === key ? -heatSort.dir : 1 };
+          const live = liveOf();
+          if (live && live.heatmapDebug) renderHeatTable(live.heatmapDebug);
+        });
+      });
+      byId('heatKindFilter').addEventListener('change', () => {
+        const live = liveOf();
+        if (live && live.heatmapDebug) renderHeatTable(live.heatmapDebug);
+      });
+    }
+
     function renderCadTopology() {
+      const live = heatmapLive();
+      if (live) {
+        renderHeatmapMap(live);
+        return;
+      }
       const dw = cadCanvas.offsetWidth || 380;
       const dh = cadCanvas.offsetHeight || 165;
       if (cadCanvas.width !== dw || cadCanvas.height !== dh) {
@@ -1558,6 +2204,9 @@
       const w = cadCanvas.width;
       const h = cadCanvas.height;
       cadCtx.clearRect(0, 0, w, h);
+      cadCanvas.setAttribute('aria-label', 'Simulated room layout');
+      const glaze = byId('cadGlazingLabel');
+      if (glaze) glaze.hidden = false;
       flowTick += 0.04;
 
       const padX = 24;
@@ -2166,19 +2815,19 @@
       const penalty = Math.abs(parseFloat(cog.reactionPenalty) || 0);
       latencyEl.style.color = penalty >= 1.5 ? '#B91C1C' : penalty >= 0.05 ? '#B45309' : '#15803D';
 
-      // Spatial Gradient label
+      // Spatial label: fake floor plan, or the live heatmap caption
       const gradDelta = STATE.isWindowOpen ? 35 : Math.round((co2Round - 420) * 0.22);
       document.getElementById('spatialGradText').innerText = `+${gradDelta} ppm`;
+      syncHeatmapChrome();
 
       // Recompute Multi-Horizon Charts
       if (co2Chart && occChart) {
         const updated = Caelum.buildForecastArrays();
         co2Chart.data.datasets[0].data = updated.pastSeries;
-        co2Chart.data.datasets[1].data = updated.groundTruthSeries;
-        co2Chart.data.datasets[2].data = updated.forecastSeries;
-        co2Chart.data.datasets[3].data = updated.optimalSeries;
-        co2Chart.data.datasets[4].data = updated.upperSeries;
-        co2Chart.data.datasets[5].data = updated.lowerSeries;
+        co2Chart.data.datasets[1].data = updated.forecastSeries;
+        co2Chart.data.datasets[2].data = updated.optimalSeries;
+        co2Chart.data.datasets[3].data = updated.upperSeries;
+        co2Chart.data.datasets[4].data = updated.lowerSeries;
         co2Chart.update('none');
 
         syncOccupancyChart();
@@ -2555,13 +3204,6 @@
         if (!shortcutsPanel.contains(e.target)) setShortcutsOpen(false);
       });
 
-      // Hardware Validation Overlay Checkbox
-      byId('sensorCheckbox').addEventListener('change', (e) => {
-        STATE.showGroundTruth = e.target.checked;
-        co2Chart.data.datasets[1].hidden = !STATE.showGroundTruth;
-        co2Chart.update();
-      });
-
       // Physics Sliders (engine owns the state, broadcasts, and re-renders)
       byId('volSlider').addEventListener('input', (e) => Caelum.setVolume(e.target.value));
       byId('occSlider').addEventListener('input', (e) => Caelum.setOccupancy(e.target.value));
@@ -2730,6 +3372,9 @@
       btnBle.addEventListener('click', () => setBottomTab('ble'));
 
       window.addEventListener('resize', resizeCadCanvas);
+      wireHeatmapControls();
+      cadCanvas.addEventListener('mousemove', onCadMove);
+      cadCanvas.addEventListener('mouseleave', () => { byId('cadTip').hidden = true; });
 
       // Expose helpers for backend.js adapter
       window.populateRoomSelector = populateRoomSelector;

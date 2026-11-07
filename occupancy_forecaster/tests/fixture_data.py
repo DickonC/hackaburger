@@ -1,4 +1,7 @@
-"""Generate reproducible, explicitly SYNTHETIC five-minute room occupancy data."""
+"""Test fixture: reproducible SYNTHETIC five-minute occupancy for unit tests only.
+
+The product trains on the real Aalborg office dataset (see aalborg.py); this
+generator just gives the tests a small, deterministic series."""
 from __future__ import annotations
 
 import argparse
@@ -52,17 +55,3 @@ def generate(weeks: int = 10, capacity: int = 32, seed: int = 43,
         'count': counts,
     })
 
-
-if __name__ == '__main__':
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--weeks', type=int, default=10)
-    p.add_argument('--capacity', type=int, default=32)
-    p.add_argument('--seed', type=int, default=43)
-    p.add_argument('--room', default='office_1')
-    p.add_argument('--output', default='data/synthetic_occupancy.csv')
-    args = p.parse_args()
-    out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    df = generate(args.weeks, args.capacity, args.seed, room_id=args.room)
-    df.to_csv(out, index=False)
-    print(f'Generated {len(df):,} SYNTHETIC 5-minute readings at {out}')

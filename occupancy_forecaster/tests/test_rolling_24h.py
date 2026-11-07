@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from generate_data import generate
+from fixture_data import generate
 from rolling_24h import (current_local_time, fit_calendar_24h, forecast_clock_24h,
                          append_24h_log, evaluate_24h_log, seasonal_predict)
 

@@ -285,7 +285,13 @@ def train_backtest_forecast(series: pd.Series, room_id: str, capacity: int,
     pd.DataFrame(selection_rows).to_csv(output_dir / 'model_selection.csv', index=False)
     bundle = ForecastBundle(room_id, capacity, artifacts, str(bounds[0]), str(idx[-1]))
     joblib.dump(bundle, output_dir / 'forecast_bundle.joblib')
-    future = forecast_from_series(series, bundle)
+    try:
+        future = forecast_from_series(series, bundle)
+    except ValueError as e:
+        # e.g. the last reading follows a sensor gap, so its day/week lags are missing
+        warnings.warn(f'No forecast from the latest reading: {e}', stacklevel=2)
+        future = pd.DataFrame(columns=['room_id', 'origin_time', 'target_time', 'horizon_min', 'model_name',
+                                       'expected_people', 'lower_80', 'upper_80'])
     future.to_csv(output_dir / 'forecast.csv', index=False)
     return {'metrics': metrics, 'backtest': backtest, 'forecast': future,
             'bundle': bundle}

@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from generate_data import generate
+from fixture_data import generate
 from occupancy_core import (CANDIDATES, features, split_masks, fit_horizon,
                             append_forecast_log, evaluate_forecast_log)
 

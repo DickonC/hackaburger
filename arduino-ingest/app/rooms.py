@@ -1,11 +1,14 @@
 """Rooms, historic occupancy, window state, CO2 estimate and 24-hour forecast.
 
 People come from the room's board (see main.py) where it has readings, otherwise
-from the room's occupancy_history (imported/synthetic). CO2 uses the frontend's
-transient mass balance; the people forecast uses occupancy_forecaster/rolling_24h.py.
+from the room's occupancy_history (e.g. the Aalborg office dataset, see dataset.py).
+CO2 uses the frontend's transient mass balance. The people forecast uses
+occupancy_forecaster: the short-term models (occupancy_core) for the first hour when
+the board is live, and the weekday x time-of-day model (rolling_24h) for 24 hours.
+A room can borrow another room's models with `model_from`; patterns are matched by
+local wall-clock time and scaled by capacity.
 """
 
-import csv
 import json
 import math
 import os
@@ -14,19 +17,20 @@ import sqlite3
 import sys
 import time
 import unicodedata
-from datetime import datetime
+from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, available_timezones
+from zoneinfo import available_timezones
 
+import joblib
 import pandas as pd
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.core import DEVICE_RE, bucket_people, db, is_number, iso, parse_time, require_key, time_range
 
 sys.path.insert(0, os.environ.get("FORECASTER_DIR", "/app/occupancy_forecaster"))
-from rolling_24h import fit_calendar_24h, forecast_clock_24h, seasonal_predict  # noqa: E402
+from rolling_24h import fit_calendar_24h, forecast_clock_24h  # noqa: E402
 
-HISTORY_SEED_CSV = os.environ.get("HISTORY_SEED_CSV", "/app/seed/synthetic_occupancy.csv")
+MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/data/models"))
 STEP_S = 300  # the forecaster works in 5-minute slots
 MIN_HISTORY_POINTS = 28 * 24 * 12  # four weeks, required by fit_calendar_24h
 WARMUP_S = 12 * 3600  # CO2 is simulated from outdoor level this long before the requested range
@@ -39,6 +43,7 @@ ROOM_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 ROOM_DEFAULTS = {
     "capacity": 32,
     "device": None,
+    "model_from": None,  # room whose history/models to use, if this room has none of its own
     "scheduled_count": 0,
     "co2_gen_lph": 16.0,  # L/h CO2 per person (16 sedentary, 24 presenting)
     "outdoor_ppm": 420.0,
@@ -52,6 +57,7 @@ ROOM_FIELDS = {
     "volume_m3": (float, 1, 100000),
     "capacity": (int, 1, 10000),
     "device": ("device", None, None),
+    "model_from": ("room_ref", None, None),
     "scheduled_count": (int, 0, 10000),
     "windows": ("windows", None, None),
     "co2_gen_lph": (float, 1, 100),
@@ -61,7 +67,7 @@ ROOM_FIELDS = {
     "timezone": ("timezone", None, None),
 }
 
-# The frontend's preset rooms; the synthetic history is loaded for the one with a board
+# The frontend's preset rooms (dataset.py links them to dataset rooms via model_from)
 SEED_ROOMS = [
     {"id": "appleton", "name": "Appleton Tower — Study Pod 4.02", "volume_m3": 65.0, "capacity": 32,
      "device": "uno-q-1", "scheduled_count": 12,
@@ -73,10 +79,10 @@ SEED_ROOMS = [
     {"id": "personal", "name": "Personal Study Mode — Dorm / Bedroom", "volume_m3": 32.0, "capacity": 2,
      "scheduled_count": 1, "windows": [{"name": "Bedroom Sash Win", "area_m2": 0.8}]},
 ]
-SEED_HISTORY_ROOM = "appleton"
 
 router = APIRouter(dependencies=[Depends(require_key)])
-_models: dict[str, tuple[float, tuple, Any]] = {}  # room_id -> (fitted_at, key, model)
+_models: dict[str, tuple[float, tuple, Any]] = {}  # room_id -> (fitted_at, key, calendar model)
+_bundles: dict[str, tuple[float, Any]] = {}  # room_id -> (file mtime, short-term ForecastBundle)
 
 
 # ---------------------------------------------------------------- storage
@@ -101,22 +107,14 @@ def migrate(conn: sqlite3.Connection):
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_window_events ON window_events (room_id, ts)")
+    have = {r[1] for r in conn.execute("PRAGMA table_info(occupancy_history)")}
+    for col, typ in (("co2_ppm", "REAL"), ("window_open", "INTEGER")):  # measured, where the source has them
+        if col not in have:
+            conn.execute(f"ALTER TABLE occupancy_history ADD COLUMN {col} {typ}")
     if conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0] == 0:
         for seed in SEED_ROOMS:
             room = {**ROOM_DEFAULTS, **{k: v for k, v in seed.items() if k != "id"}}
             conn.execute("INSERT INTO rooms (id, room) VALUES (?, ?)", (seed["id"], json.dumps(room)))
-        if os.path.exists(HISTORY_SEED_CSV):
-            import_csv(conn, SEED_HISTORY_ROOM, HISTORY_SEED_CSV, ROOM_DEFAULTS["timezone"], "synthetic")
-
-
-def import_csv(conn: sqlite3.Connection, room_id: str, path: str, tz: str, source: str) -> int:
-    """Load a forecaster-style CSV (timestamp,room_id,count in local time) as a room's history."""
-    zone = ZoneInfo(tz)
-    with open(path, newline="") as f:
-        rows = [(room_id, datetime.fromisoformat(r["timestamp"]).replace(tzinfo=zone).timestamp(),
-                 float(r["count"]), source) for r in csv.DictReader(f)]
-    conn.executemany("INSERT OR REPLACE INTO occupancy_history VALUES (?, ?, ?, ?)", rows)
-    return len(rows)
 
 
 def get_room(conn: sqlite3.Connection, room_id: str) -> dict:
@@ -149,13 +147,16 @@ def room_out(conn: sqlite3.Connection, room_id: str, room: dict) -> dict:
     open_idx = set(timeline[-1][2]) if timeline else set()
     h = conn.execute("SELECT COUNT(*), MIN(ts), MAX(ts) FROM occupancy_history WHERE room_id = ?",
                      (room_id,)).fetchone()
+    sources = [r[0] for r in conn.execute("SELECT DISTINCT source FROM occupancy_history WHERE room_id = ?",
+                                          (room_id,))]
     return {
         "id": room_id,
         **room,
         "windows": [{**w, "is_open": i in open_idx} for i, w in enumerate(room["windows"])],
         "open_area_m2": round(sum(w["area_m2"] for i, w in enumerate(room["windows"]) if i in open_idx), 2),
         "history": {"points": h[0], "from": iso(h[1]) if h[1] else None, "to": iso(h[2]) if h[2] else None,
-                    "enough_for_forecast": h[0] >= MIN_HISTORY_POINTS},
+                    "sources": sources, "enough_for_forecast": h[0] >= MIN_HISTORY_POINTS,
+                    "short_term_model": (MODELS_DIR / room_id / "forecast_bundle.joblib").exists()},
     }
 
 
@@ -167,7 +168,10 @@ def validate_room(changes: Any, *, partial: bool) -> dict:
         if field not in ROOM_FIELDS:
             raise HTTPException(422, f"unknown field: {field}")
         kind, lo, hi = ROOM_FIELDS[field]
-        if kind == "device":
+        if kind == "room_ref":
+            if value is not None and (not isinstance(value, str) or not ROOM_ID_RE.match(value)):
+                raise HTTPException(422, "model_from must be null or a room id")
+        elif kind == "device":
             if value is not None and (not isinstance(value, str) or not DEVICE_RE.match(value)):
                 raise HTTPException(422, "device must be null or 1-64 characters of [A-Za-z0-9_-]")
         elif kind == "timezone":
@@ -269,6 +273,84 @@ def calendar_model(conn: sqlite3.Connection, room_id: str, room: dict):
     return model
 
 
+def load_bundle(room_id: str):
+    """Short-term ForecastBundle trained by app.dataset (only files this server wrote are loaded)."""
+    path = MODELS_DIR / room_id / "forecast_bundle.joblib"
+    if not path.exists():
+        return None
+    mtime = path.stat().st_mtime
+    cached = _bundles.get(room_id)
+    if not cached or cached[0] != mtime:
+        _bundles[room_id] = (mtime, joblib.load(path))
+    return _bundles[room_id][1]
+
+
+def room_models(conn: sqlite3.Connection, room_id: str, room: dict) -> dict | None:
+    """The calendar + short-term models for a room: its own, or those of room['model_from']."""
+    source_id = room["model_from"] or room_id
+    source = room
+    if source_id != room_id:
+        row = conn.execute("SELECT room FROM rooms WHERE id = ?", (source_id,)).fetchone()
+        if not row:
+            return None
+        source = {**ROOM_DEFAULTS, **json.loads(row["room"])}
+    calendar = calendar_model(conn, source_id, source)
+    if calendar is None:
+        return None
+    return {"source": source_id, "calendar": calendar, "bundle": load_bundle(source_id),
+            "scale": source["capacity"] / room["capacity"]}  # room people -> model people
+
+
+def wall_times(epochs, tz: str) -> pd.DatetimeIndex:
+    return pd.to_datetime(list(epochs), unit="s", utc=True).tz_convert(tz).tz_localize(None)
+
+
+def expected_people(models: dict, room: dict, epochs) -> list[float]:
+    """The calendar model's usual count at these times (room-local wall clock), in room people."""
+    cal = models["calendar"]
+    return [float(cal.patterns[t.day_of_week][t.hour * 12 + t.minute // 5]) / models["scale"]
+            for t in wall_times(epochs, room["timezone"])]
+
+
+def observation_series(conn: sqlite3.Connection, room: dict, models: dict, now: float) -> pd.Series | None:
+    """Live board counts for the short-term models, in model people on the room's wall clock.
+
+    The models need the count 1 day and 1 week ago; slots the board didn't cover are filled
+    with the usual (calendar) count for that time. None if the board isn't live now.
+    """
+    if not room["device"]:
+        return None
+    end = math.floor(now / STEP_S) * STEP_S + STEP_S  # includes the current, partial slot
+    start = end - (2016 + 25) * STEP_S
+    live = bucket_people(conn, room["device"], start, end, STEP_S)
+    if live[-1] is None:
+        live, end = live[:-1], end - STEP_S
+        if live[-1] is None:
+            return None
+    times = [start + i * STEP_S for i in range(len(live))]
+    usual = expected_people(models, room, times)
+    values = [(v if v is not None else u) * models["scale"] for v, u in zip(live, usual)]
+    s = pd.Series(values, index=wall_times(times, room["timezone"]), dtype=float)
+    return s[~s.index.duplicated(keep="last")]
+
+
+def forecast_people(conn: sqlite3.Connection, room: dict, models: dict, now: float, n: int, shift_days: int):
+    """(times, expected, lower, upper, used_short_term) for the n 5-minute slots after now."""
+    cal, scale, tz = models["calendar"], models["scale"], room["timezone"]
+    wall_now = pd.Timestamp(now, unit="s", tz="UTC").tz_convert(tz).tz_localize(None) - pd.Timedelta(days=shift_days)
+    obs = observation_series(conn, room, models, now) if models["bundle"] is not None and not shift_days else None
+    # A naive `at` is read in the model's timezone, so the room's wall clock maps onto the model's
+    f = forecast_clock_24h(cal, at=wall_now, observations=obs, short_bundle=models["bundle"],
+                           allow_live=obs is not None).head(n)
+    times = [(pd.Timestamp(t).tz_localize(None) + pd.Timedelta(days=shift_days))
+             .tz_localize(tz, ambiguous=True, nonexistent="shift_forward").timestamp() for t in f["target_time"]]
+    cap = room["capacity"]
+    cols = [[min(cap, max(0.0, v / scale)) for v in f[c].astype(float)] for c in ("expected_people", "lower_80", "upper_80")]
+    used_short = f["observation_mode"].iloc[0] == "recent_live_anchor"
+    short_models = sorted({m.removeprefix("short_term_") for m in f["model_name"] if m.startswith("short_term_")})
+    return times, *cols, used_short, short_models
+
+
 # ---------------------------------------------------------------- CO2 (same model as the frontend)
 
 def airflow_m3h(room: dict, open_area: float) -> float:
@@ -283,18 +365,18 @@ def step_co2(c0: float, people: float, room: dict, q_m3h: float, dt_h: float) ->
 
 
 def simulate_co2(conn: sqlite3.Connection, room_id: str, room: dict, start: float, end: float,
-                 step_s: float, model=None) -> list[dict]:
+                 step_s: float, models: dict | None = None) -> list[dict]:
     """CO2 at start, start+step, ... up to end. `people` is the count used for the interval after `ts`.
 
     Starts at outdoor level WARMUP_S before `start`. Gaps with no data use the calendar
-    model's expectation if there is one, otherwise 0 people.
+    models' usual count for that time if there are models, otherwise 0 people.
     """
     warm = start - math.ceil(WARMUP_S / step_s) * step_s
     times = [warm + i * step_s for i in range(math.floor((end - warm) / step_s) + 1)]
     people = occupancy_series(conn, room_id, room, warm, times[-1] + step_s, step_s)
     assumed = [None] * len(people)
-    if model is not None and any(v is None for v, _ in people):
-        assumed = list(seasonal_predict(model, pd.to_datetime(times, unit="s", utc=True)))
+    if models is not None and any(v is None for v, _ in people):
+        assumed = expected_people(models, room, times)
     timeline = window_timeline(conn, room_id, room)
     c = room["outdoor_ppm"]
     points = []
@@ -310,10 +392,10 @@ def simulate_co2(conn: sqlite3.Connection, room_id: str, room: dict, start: floa
     return points
 
 
-def co2_now(conn: sqlite3.Connection, room_id: str, room: dict, now: float, model) -> float:
+def co2_now(conn: sqlite3.Connection, room_id: str, room: dict, now: float, models) -> float:
     """CO2 at the last 5-minute boundary, then stepped forward to `now`."""
     boundary = math.floor(now / STEP_S) * STEP_S
-    p = simulate_co2(conn, room_id, room, boundary, boundary, STEP_S, model)[-1]
+    p = simulate_co2(conn, room_id, room, boundary, boundary, STEP_S, models)[-1]
     area = open_area_at(window_timeline(conn, room_id, room), boundary)
     return step_co2(p["co2_ppm"], p["people"], room, airflow_m3h(room, area), (now - boundary) / 3600)
 
@@ -395,15 +477,19 @@ def read_history(room_id: str, from_: str | None = Query(default=None, alias="fr
     with db() as conn:
         get_room(conn, room_id)
         rows = conn.execute(
-            "SELECT ts, people, source FROM occupancy_history WHERE room_id = ? AND ts >= ? AND ts < ? "
-            "ORDER BY ts LIMIT 50000", (room_id, start, end)).fetchall()
+            "SELECT ts, people, source, co2_ppm, window_open FROM occupancy_history "
+            "WHERE room_id = ? AND ts >= ? AND ts < ? ORDER BY ts LIMIT 50000", (room_id, start, end)).fetchall()
     return {"room_id": room_id,
-            "points": [{"ts": iso(r["ts"]), "people": r["people"], "source": r["source"]} for r in rows]}
+            "points": [{"ts": iso(r["ts"]), "people": r["people"], "source": r["source"],
+                        "co2_ppm": r["co2_ppm"], "window_open": r["window_open"]} for r in rows]}
 
 
 @router.post("/rooms/{room_id}/history", status_code=201)
 def add_history(room_id: str, body: Any = Body(...)):
-    """{"source": "manual", "points": [{"ts": "2026-11-07T09:00:00Z", "people": 12}, ...]}; replaces same ts."""
+    """{"source": "manual", "points": [{"ts": "2026-11-07T09:00:00Z", "people": 12, "co2_ppm": 640}, ...]}
+
+    co2_ppm (measured) is optional. Points with the same ts are replaced.
+    """
     if not isinstance(body, dict) or not isinstance(body.get("points"), list) or len(body["points"]) > 50000:
         raise HTTPException(422, 'body must be {"source": str, "points": [{"ts", "people"}]} (max 50000)')
     source = body.get("source", "manual")
@@ -413,12 +499,14 @@ def add_history(room_id: str, body: Any = Body(...)):
     for p in body["points"]:
         ts = parse_time(p.get("ts")) if isinstance(p, dict) and isinstance(p.get("ts"), str) else None
         people = p.get("people") if isinstance(p, dict) else None
-        if ts is None or not is_number(people) or people < 0:
-            raise HTTPException(422, "each point needs an ISO ts and a people number >= 0")
-        rows.append((room_id, ts, float(people), source))
+        co2 = p.get("co2_ppm") if isinstance(p, dict) else None
+        if ts is None or not is_number(people) or people < 0 or (co2 is not None and not is_number(co2)):
+            raise HTTPException(422, "each point needs an ISO ts, a people number >= 0 and optionally co2_ppm")
+        rows.append((room_id, ts, float(people), source, None if co2 is None else float(co2)))
     with db() as conn:
         get_room(conn, room_id)
-        conn.executemany("INSERT OR REPLACE INTO occupancy_history VALUES (?, ?, ?, ?)", rows)
+        conn.executemany("INSERT OR REPLACE INTO occupancy_history (room_id, ts, people, source, co2_ppm) "
+                         "VALUES (?, ?, ?, ?, ?)", rows)
     return {"stored": len(rows)}
 
 
@@ -457,50 +545,59 @@ def read_co2(room_id: str, from_: str | None = Query(default=None, alias="from")
         raise HTTPException(422, "too many points; increase step_s or shorten the range")
     with db() as conn:
         room = get_room(conn, room_id)
-        points = simulate_co2(conn, room_id, room, start, end, step_s, calendar_model(conn, room_id, room))
+        points = simulate_co2(conn, room_id, room, start, end, step_s, room_models(conn, room_id, room))
     return {"room_id": room_id, "step_s": step_s, "estimated": True, "points": points}
 
 
 @router.get("/rooms/{room_id}/forecast")
 def read_forecast(room_id: str, hours: int = Query(default=24, ge=1, le=24),
                   as_weekday: str | None = Query(default=None, description="mon..sun: use that day's pattern")):
-    """People and CO2 for the next `hours`, every 5 minutes, from the forecaster + live board data."""
-    shift_days = 0
+    """People and CO2 for the next `hours`, every 5 minutes.
+
+    People: the forecaster's short-term models for the first hour when the room's board is
+    live (fading into the usual pattern, as in rolling_24h), otherwise the weekday x
+    time-of-day pattern; rooms without any models hold the current count.
+    """
     now = time.time()
+    n = hours * 12
     with db() as conn:
         room = get_room(conn, room_id)
-        model = calendar_model(conn, room_id, room)
+        models = room_models(conn, room_id, room)
         live = live_people(conn, room_id, room, now)
-        c_now = co2_now(conn, room_id, room, now, model)
+        c_now = co2_now(conn, room_id, room, now, models)
         timeline = window_timeline(conn, room_id, room)
-    n = hours * 12
-    cap = room["capacity"]
-
-    if model is not None:
-        clock = pd.Timestamp(now, unit="s", tz="UTC").tz_convert(room["timezone"])
+        shift_days = 0
         if as_weekday:
+            if models is None:
+                raise HTTPException(409, "as_weekday needs a room with history (or model_from)")
             wd = as_weekday.strip().lower()[:3]
             if wd not in WEEKDAYS:
                 raise HTTPException(422, "as_weekday must be mon, tue, wed, thu, fri, sat or sun")
-            shift_days = (clock.day_of_week - WEEKDAYS.index(wd)) % 7
-        f = forecast_clock_24h(model, at=clock - pd.Timedelta(days=shift_days), allow_live=False).head(n)
-        times = [pd.Timestamp(t).timestamp() + shift_days * 86400 for t in f["target_time"]]
-        expected, lower, upper = (list(f[c].astype(float)) for c in ("expected_people", "lower_80", "upper_80"))
+            today = pd.Timestamp(now, unit="s", tz="UTC").tz_convert(room["timezone"]).day_of_week
+            shift_days = (today - WEEKDAYS.index(wd)) % 7
+        if models is not None:
+            times, expected, lower, upper, used_short, short_models = forecast_people(
+                conn, room, models, now, n, shift_days)
+        else:
+            origin = math.floor(now / STEP_S) * STEP_S
+            times = [origin + (i + 1) * STEP_S for i in range(n)]
+            expected = lower = upper = [float(live or 0.0)] * n
+            used_short, short_models = False, []
+    cap = room["capacity"]
+
+    if models is None:
+        name = "persistence_no_history"
+    elif used_short:
+        name = "short_term+historical_time_of_week"
+    else:
         name = "historical_time_of_week"
         if live is not None:
-            # Same idea as rolling_24h's blend: today's difference fades into the usual pattern
+            # No short-term model run (no bundle, or a weekday override): fade today's difference out
             correction = live - expected[0]
             for i, t in enumerate(times):
                 d = correction * math.exp(-(t - now) / 60 / ANCHOR_DECAY_MIN)
                 expected[i], lower[i], upper[i] = (min(cap, max(0.0, v + d)) for v in (expected[i], lower[i], upper[i]))
             name += "+live_anchor"
-    else:
-        if as_weekday:
-            raise HTTPException(409, "as_weekday needs a room with at least four weeks of history")
-        origin = math.floor(now / STEP_S) * STEP_S
-        times = [origin + (i + 1) * STEP_S for i in range(n)]
-        expected = lower = upper = [float(live or 0.0)] * n
-        name = "persistence_no_history"
 
     current_area = open_area_at(timeline, now)
     total_area = sum(w["area_m2"] for w in room["windows"])
@@ -525,7 +622,9 @@ def read_forecast(room_id: str, hours: int = Query(default=24, ge=1, le=24),
         "room_id": room_id,
         "generated_at": iso(now),
         "model": name,
-        "as_weekday": as_weekday[:3].lower() if model is not None and as_weekday else None,
+        "models": {"source_room": models["source"] if models else None, "short_term": short_models,
+                   "scale": round(1 / models["scale"], 3) if models else None},
+        "as_weekday": as_weekday.strip().lower()[:3] if as_weekday else None,
         "live_people": live,
         "capacity": cap,
         "summary": {"co2_now": round(c_now), "open_area_m2": round(current_area, 2),

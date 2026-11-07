@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-from generate_data import generate
+from fixture_data import generate
 from occupancy_core import features, baseline_predict, seasonal_profile, conformal_radius, _masks
 
 class TestOccupancyForecaster(unittest.TestCase):

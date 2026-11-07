@@ -9,7 +9,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
-from generate_data import generate
+import aalborg
 from occupancy_core import (read_series, train_backtest_forecast, forecast_from_series,
                             append_forecast_log, evaluate_forecast_log)
 from rolling_24h import (fit_calendar_24h, forecast_clock_24h, current_local_time,
@@ -133,15 +133,14 @@ def issue_day_forecast(calendar, out, *, at=None, observations=None,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    demo = sub.add_parser('demo', help='Generate synthetic data and run research demo')
-    demo.add_argument('--weeks', type=int, default=10)
-    demo.add_argument('--capacity', type=int, default=32)
-    demo.add_argument('--room', default='office_1')
-    demo.add_argument('--seed', type=int, default=43)
+    real = sub.add_parser('aalborg', help='Download the Aalborg office dataset and train every room')
+    real.add_argument('--rooms', default='abcdef', help='Room letters to train, e.g. "ad"')
+    real.add_argument('--data', default='data/aalborg_occupancy.csv')
     train = sub.add_parser('train', help='Train / backtest on existing counts CSV')
     train.add_argument('--data', required=True)
     train.add_argument('--room', required=True)
     train.add_argument('--capacity', required=True, type=int)
+    train.add_argument('--timezone', default='Europe/London', help='Local time zone of the timestamps')
     forecast = sub.add_parser('forecast', help='Load saved bundle, predict and log issued forecasts')
     forecast.add_argument('--data', required=True)
     forecast.add_argument('--room', required=True)
@@ -169,7 +168,7 @@ def main():
     assess = sub.add_parser('evaluate', help='Score previously issued forecasts against later real readings')
     assess.add_argument('--data', required=True)
     assess.add_argument('--room', required=True)
-    for s in (demo, train, forecast, assess, day, assess_day, watch):
+    for s in (real, train, forecast, assess, day, assess_day, watch):
         s.add_argument('--out', default='outputs')
     args = parser.parse_args()
     out = Path(args.out)
@@ -252,20 +251,30 @@ def main():
         print(future.to_string(index=False))
         print(f'Logged {added} new issued forecasts to {out / "forecast_log.csv"}')
         return
-    if args.command == 'demo':
-        path = Path('data/synthetic_occupancy.csv')
-        path.parent.mkdir(parents=True, exist_ok=True)
-        generate(weeks=args.weeks, capacity=args.capacity, seed=args.seed,
-                 room_id=args.room).to_csv(path, index=False)
-        print('Generated entirely SYNTHETIC data:', path)
-        data, room, capacity = path, args.room, args.capacity
-    else:
-        data, room, capacity = args.data, args.room, args.capacity
+    if args.command == 'aalborg':
+        data = Path(args.data)
+        raw = aalborg.download(data.parent / 'raw')
+        long = aalborg.to_long(aalborg.load_wide(raw))
+        long.to_csv(data, index=False)
+        print(f'Aalborg office dataset (doi:{aalborg.DOI}, CC BY 4.0): {len(long):,} rows -> {data}')
+        for letter in args.rooms.upper():
+            room = aalborg.room_id(letter)
+            capacity = int(long.loc[long['room_id'] == room, 'count'].max())
+            print(f'\n=== {room} (capacity = observed maximum {capacity}) ===')
+            train_room(data, room, capacity, out / room, source_label='Aalborg office dataset',
+                       timezone=aalborg.TIMEZONE)
+        return
+    train_room(args.data, args.room, args.capacity, out, source_label='real / user-supplied',
+               timezone=args.timezone)
+
+
+def train_room(data, room, capacity, out, *, source_label, timezone):
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
     series = read_series(data, room)
     result = train_backtest_forecast(series, room, capacity, out)
-    source_label = 'synthetic' if args.command == 'demo' else 'real / user-supplied'
     pd.DataFrame({'timestamp': series.index, 'room_id': room, 'count': series.values}).to_csv(out / 'input_history.csv', index=False)
-    calendar = fit_calendar_24h(series, room, capacity)
+    calendar = fit_calendar_24h(series, room, capacity, timezone=timezone)
     joblib.dump(calendar, out / 'calendar_model.joblib')
     (out / 'project_metadata.json').write_text(json.dumps({'source': source_label, 'room_id': room, 'sampling_minutes': 5}, indent=2))
     metrics = result['metrics']

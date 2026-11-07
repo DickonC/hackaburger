@@ -40,9 +40,9 @@ Body:
     "config_version": 3,
     "settings": { "threshold_dbm": -75, "window_s": 30, "people_factor": 0.7 },
     "devices": [
-      { "id": "a3f9c2e1b7d04e12", "rssi": -52.0, "n": 9 },
-      { "id": "7c41d09a5e2bf830", "rssi": -61.5, "n": 4 },
-      { "id": "e09b44c1aa7f2d65", "rssi": -83.0, "n": 1 }
+      { "id": "a3f9c2e1b7d04e12", "rssi": -52.0, "n": 9, "kind": "apple_device", "static": false },
+      { "id": "7c41d09a5e2bf830", "rssi": -61.5, "n": 4, "kind": "earbuds", "static": false },
+      { "id": "e09b44c1aa7f2d65", "rssi": -83.0, "n": 1, "kind": "unknown", "static": false }
     ]
   }
 }
@@ -61,6 +61,26 @@ Body:
 | `devices[].id` | string | **Anonymised** device ID: the first 16 hex characters of `HMAC-SHA256(secret, bluetooth_address)`. All boards use the same secret, so the same phone gets the same ID on every board. The server never sees real addresses. Note that phones change their address about every 15 minutes, so IDs don't track anyone long-term either. |
 | `devices[].rssi` | number | Median signal strength in the window, in dBm. Closer to 0 means closer to the board. |
 | `devices[].n` | int | How often the device was heard in the window. |
+| `devices[].kind` | string | The board's guess at the **device category**, from the broadcast content (manufacturer data, service UUIDs, name hints). Only the category is sent, never the name or address. One of the values in the table below. |
+| `devices[].static` | bool | `true` if the device uses a public, non-rotating Bluetooth address. That's typical of fixed devices and some laptops, and rare for phones. |
+
+### Device categories (`kind`)
+
+| `kind` | Typically | Counts as a person? |
+|---|---|---|
+| `apple_device` | iPhone, iPad, Mac, Apple Watch (Apple "Nearby Info", Handoff, AirDrop) | yes |
+| `phone` | other phone signals | yes |
+| `computer` | Windows laptops and PCs (Microsoft data) | yes |
+| `wearable` | watches, fitness bands | yes |
+| `brand_other` | Samsung/Google data without a clearer hint | yes |
+| `unknown` | nothing recognisable. Many Android phones fall here. | yes |
+| `earbuds` | AirPods, Beats, Fast Pair headphones | **no**, an accessory |
+| `tracker` | AirTag / Find My, Tile, SmartTag, Chipolo | **no** |
+| `beacon` | iBeacon, Eddystone | **no** |
+| `fixed` | Apple TV and HomePod (AirPlay), TVs, printers, smart speakers | **no** |
+
+**The board's own count** (`devices_in_range`, `people`, LED) already leaves out `earbuds`, `tracker`, `beacon` and `fixed`. The `devices` list still contains **all** devices with their `kind`, so the server can decide for itself.
+In a first test at the venue, 84 devices broke down as 33 `apple_device`, 17 `computer`, 13 `unknown`, 8 `earbuds`, 7 `tracker` and 6 `fixed`.
 
 In a busy venue the board hears 300–500 devices, which makes a message of roughly 15–25 KB. Every 5 s that's about 4 KB/s per board, which is fine. With `send_devices: false` a message is under 300 bytes.
 

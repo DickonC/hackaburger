@@ -1,11 +1,11 @@
 /* =====================================================================
    HACKABURGER BACKEND ADAPTER
-   Connects index.html to the backend (docs/backend-api.md) without
-   editing the simulation code: it hooks the page's own functions.
+   Connects index.html and admin.html to the backend (docs/backend-api.md)
+   without breaking the simulation engine: it hooks Caelum and the UI.
 
    - Rooms come from /rooms (custom rooms are saved there, not localStorage)
    - Occupancy + CO2 + forecast come from the server for rooms with data
-     (a live board or history); other rooms keep the original simulation
+     (a live board or history); other rooms keep the simulation
    - Window toggles are saved with PUT /rooms/{id}/windows
    - "Deploy Config" sends the range threshold + interval to the board
    - The BLE packet log shows the board's real (anonymised) devices
@@ -25,11 +25,15 @@
   // Indexes into TIME_LABELS: 8 past slots every 15 min, NOW, then future offsets in minutes
   const FUTURE_MIN = [15, 30, 45, 60, 90, 120, 150, 180, 240];
 
+  function getCaelum() { return window.Caelum; }
+  function getState() { return (window.Caelum && window.Caelum.STATE) || window.STATE; }
+  function getDefaultRooms() { return (window.Caelum && window.Caelum.DEFAULT_ROOMS) || window.DEFAULT_ROOMS || []; }
+
   const live = {
     enabled: false,      // backend reachable with a valid key
     forceSim: false,     // user switched back to the simulation
     mode: 'sim',         // 'live' | 'model' | 'sim' for the current room
-    seedIds: DEFAULT_ROOMS.map(r => r.id),
+    seedIds: (getDefaultRooms() || []).map(r => r.id),
     customs: [],         // server rooms that aren't presets, in the page's room shape
     serverRooms: {},     // id -> server room
     forecast: null, pastCo2: null, pastOcc: null, board: null, devices: [], deviceCursor: 0,
@@ -70,15 +74,18 @@
   // ------------------------------------------------------------ rooms
 
   function toPageRoom(r) {
+    const seed = live.seedIds.includes(r.id);
     return {
       id: r.id,
       name: r.name,
+      shortName: (r.name || '').split('—').pop().trim() || r.name,
       volume: r.volume_m3,
       occupancy: 0,
       scheduledCount: r.scheduled_count,
-      co2: r.outdoor_ppm,
-      windows: r.windows.map((w, i) => ({ id: i + 1, name: w.name, area: w.area_m2, isOpen: w.is_open })),
-      isCustom: !live.seedIds.includes(r.id),
+      capacity: Math.max(2, Math.round((r.volume_m3 || 60) / 5.5), r.scheduled_count || 0),
+      co2: r.outdoor_ppm || 420.0,
+      windows: (r.windows || []).map((w, i) => ({ id: i + 1, name: w.name, area: w.area_m2, isOpen: Boolean(w.is_open) })),
+      isCustom: !seed,
       device: r.device,
     };
   }
@@ -89,7 +96,8 @@
       volume_m3: room.volume,
       scheduled_count: Math.max(0, Math.round(room.scheduledCount || 0)),
       windows: (room.windows || []).map((w, i) => ({
-        name: (w.name || `Window ${i + 1}`).slice(0, 64), area_m2: Math.max(0.1, Math.min(20, w.area || 1)),
+        name: (w.name || `Window ${i + 1}`).slice(0, 64),
+        area_m2: Math.max(0.1, Math.min(20, w.area || 1)),
       })),
     };
   }
@@ -97,8 +105,15 @@
   function applyServerRooms(rooms) {
     live.serverRooms = Object.fromEntries(rooms.map(r => [r.id, r]));
     const presets = rooms.filter(r => live.seedIds.includes(r.id)).map(toPageRoom);
-    DEFAULT_ROOMS.splice(0, DEFAULT_ROOMS.length, ...presets);
+    const defRooms = getDefaultRooms();
+    if (defRooms && presets.length) {
+      defRooms.splice(0, defRooms.length, ...presets);
+    }
     live.customs = rooms.filter(r => !live.seedIds.includes(r.id)).map(toPageRoom);
+    const Caelum = getCaelum();
+    if (Caelum && typeof Caelum.changed === 'function') {
+      Caelum.changed('rooms');
+    }
   }
 
   async function loadRooms() {
@@ -118,15 +133,21 @@
     localStorage.removeItem('caelum_custom_rooms');
   }
 
-  // The page calls getCustomRooms/saveCustomRooms for create, delete and edits of custom rooms
-  const origGetCustomRooms = window.getCustomRooms;
-  const origSaveCustomRooms = window.saveCustomRooms;
-  window.getCustomRooms = function () {
-    if (!live.enabled) return origGetCustomRooms();
+  // Hook getCustomRooms and saveCustomRooms on Caelum and window
+  const Caelum = getCaelum();
+  const origGetCustomRooms = (Caelum && Caelum.getCustomRooms) || window.getCustomRooms;
+  const origSaveCustomRooms = (Caelum && Caelum.saveCustomRooms) || window.saveCustomRooms;
+
+  function getCustomRoomsImpl() {
+    if (!live.enabled) return origGetCustomRooms ? origGetCustomRooms() : [];
     return JSON.parse(JSON.stringify(live.customs));
-  };
-  window.saveCustomRooms = function (rooms) {
-    if (!live.enabled) return origSaveCustomRooms(rooms);
+  }
+
+  function saveCustomRoomsImpl(rooms) {
+    if (!live.enabled) {
+      if (origSaveCustomRooms) origSaveCustomRooms(rooms);
+      return;
+    }
     const before = Object.fromEntries(live.customs.map(r => [r.id, r]));
     const after = Object.fromEntries(rooms.map(r => [r.id, r]));
     live.customs = JSON.parse(JSON.stringify(rooms));
@@ -147,45 +168,100 @@
       if (!after[id]) jobs.push(api(`/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }));
     }
     if (jobs.length) Promise.all(jobs).then(loadRooms).catch(e => showError(`Saving room failed: ${e.message}`));
-  };
+  }
+
+  if (Caelum) {
+    Caelum.getCustomRooms = getCustomRoomsImpl;
+    Caelum.saveCustomRooms = saveCustomRoomsImpl;
+  }
+  window.getCustomRooms = getCustomRoomsImpl;
+  window.saveCustomRooms = saveCustomRoomsImpl;
 
   // ------------------------------------------------------------ windows
 
   function syncWindows() {
-    if (!live.enabled || live.forceSim || !live.serverRooms[STATE.currentRoomId]) return;
-    const open = STATE.windows.map((w, i) => (w.isOpen ? i : -1)).filter(i => i >= 0);
+    const STATE = getState();
+    if (!live.enabled || live.forceSim || !STATE || !live.serverRooms[STATE.currentRoomId]) return;
+    const open = (STATE.windows || []).map((w, i) => (w.isOpen ? i : -1)).filter(i => i >= 0);
     api(`/rooms/${encodeURIComponent(STATE.currentRoomId)}/windows`, { method: 'PUT', body: { open } })
       .then(() => poll())
       .catch(e => showError(`Saving windows failed: ${e.message}`));
   }
 
+  if (Caelum) {
+    ['setOpenWindowsCount', 'closeAllWindows', 'toggleWindow', 'toggleWindowsDefault', 'requestOpenWindows'].forEach(name => {
+      const orig = Caelum[name];
+      if (typeof orig === 'function') {
+        Caelum[name] = function (...args) {
+          const res = orig.apply(this, args);
+          syncWindows();
+          return res;
+        };
+      }
+    });
+  }
+
   ['toggleIndividualWindow', 'setOpenWindowsCount', 'closeAllWindowsAndStopTimer'].forEach(name => {
-    const orig = window[name];
-    window[name] = function (...args) {
-      const result = orig.apply(this, args);
-      syncWindows();
-      return result;
-    };
+    if (typeof window[name] === 'function') {
+      const orig = window[name];
+      window[name] = function (...args) {
+        const result = orig.apply(this, args);
+        syncWindows();
+        return result;
+      };
+    }
   });
 
-  // Room switch: the page resets windows to closed; restore the server's state and refresh
-  const origSwitchRoom = window.switchRoom;
-  window.switchRoom = function (roomId) {
-    origSwitchRoom(roomId);
+  // Room switch: restore the server's state and refresh
+  function onRoomSwitched(roomId) {
+    const STATE = getState();
+    if (!STATE) return;
     const server = live.serverRooms[STATE.currentRoomId];
     if (live.enabled && server && !live.forceSim) {
-      STATE.windows.forEach((w, i) => { w.isOpen = Boolean(server.windows[i] && server.windows[i].is_open); });
+      if (STATE.windows) {
+        STATE.windows.forEach((w, i) => { w.isOpen = Boolean(server.windows[i] && server.windows[i].is_open); });
+      }
       live.forecast = live.pastCo2 = live.pastOcc = live.board = null;
       live.devices = [];
-      updateWindowControlsUI();
+      const updateWin = window.updateWindowControlsUI || (typeof updateWindowControlsUI === 'function' ? updateWindowControlsUI : null);
+      if (updateWin) updateWin();
       poll();
     }
-  };
+  }
+
+  if (Caelum && typeof Caelum.switchRoom === 'function') {
+    const origCaelumSwitch = Caelum.switchRoom;
+    Caelum.switchRoom = function (roomId) {
+      origCaelumSwitch.call(Caelum, roomId);
+      onRoomSwitched(roomId);
+    };
+  }
+  if (typeof window.switchRoom === 'function') {
+    const origWinSwitch = window.switchRoom;
+    window.switchRoom = function (roomId) {
+      origWinSwitch(roomId);
+      onRoomSwitched(roomId);
+    };
+  } else {
+    window.switchRoom = function (roomId) {
+      if (Caelum && typeof Caelum.switchRoom === 'function') Caelum.switchRoom(roomId);
+      else onRoomSwitched(roomId);
+    };
+  }
 
   // ------------------------------------------------------------ live occupancy / CO2
 
   async function poll() {
     if (!live.enabled) return;
+    const Caelum = getCaelum();
+    // In room view, if linked to the admin console, let the admin broadcast drive the view
+    if (Caelum && typeof Caelum.getRole === 'function' && Caelum.getRole() === 'room' && Caelum.getLink() === 'admin') {
+      renderBadge();
+      return;
+    }
+
+    const STATE = getState();
+    if (!STATE) return;
     const roomId = STATE.currentRoomId;
     const room = live.serverRooms[roomId];
     if (!room) { live.mode = 'sim'; renderBadge(); return; }
@@ -202,7 +278,6 @@
         api(`/rooms/${encodeURIComponent(roomId)}/occupancy?from=${from}&step_s=900`),
         room.device ? api(`/data?device=${encodeURIComponent(room.device)}&limit=1`) : [],
       ]);
-      // /occupancy/latest is 404 for a board that has never sent anything, so only ask once it has
       const board = latest.length ? await api(`/occupancy/latest?device=${encodeURIComponent(room.device)}`) : null;
       if (STATE.currentRoomId !== roomId) return; // switched while loading
       Object.assign(live, { forecast, pastCo2: pastCo2.points, pastOcc: pastOcc.points, board, error: null, lastUpdate: Date.now() });
@@ -228,13 +303,17 @@
   }
 
   function applyLiveState() {
+    const STATE = getState();
     const f = live.forecast;
+    if (!STATE || !f) return;
     const room = live.serverRooms[STATE.currentRoomId];
-    const people = f.live_people !== null ? f.live_people : f.points[0].people;
+    if (!room) return;
+    const people = f.live_people !== null ? f.live_people : (f.points && f.points[0] ? f.points[0].people : 0);
     STATE.occupancy = Math.max(0, Math.round(people));
     STATE.co2 = f.summary.co2_now;
     STATE.roomVolume = room.volume_m3;
     STATE.scheduledCount = room.scheduled_count;
+    if (room.capacity) STATE.capacity = room.capacity;
     STATE.infiltrationACH = room.infiltration_ach;
     STATE.kFlow = room.k_flow;
     STATE.cOutdoor = room.outdoor_ppm;
@@ -249,34 +328,80 @@
     const volLabel = document.getElementById('volValLabel');
     if (volSlider) volSlider.value = STATE.roomVolume;
     if (volLabel) volLabel.innerText = `${STATE.roomVolume} m³`;
-    refreshUI();
+
+    const Caelum = getCaelum();
+    if (Caelum && typeof Caelum.changed === 'function') {
+      Caelum.changed('backend');
+    }
+    const refresh = window.refreshUI || (typeof refreshUI === 'function' ? refreshUI : null);
+    if (refresh) refresh();
   }
 
-  // The simulation clock runs at 30x; in live/model mode the server's values are shown instead
+  // Simulation step hook for backward compatibility
   const origStep = window.stepSimulationTick;
-  window.stepSimulationTick = function () {
-    if (live.mode === 'sim' || STATE.isTimeWarpRunning) return origStep();
-    if (live.forecast) STATE.co2 = live.forecast.summary.co2_now;
-    if (!STATE.isWindowOpen && STATE.countdownSeconds > 0) STATE.countdownSeconds = Math.max(0, STATE.countdownSeconds - 2);
-    updateTimerDisplayUI();
-    refreshUI();
-  };
-
-  // Time-warp and the occupancy slider are simulation features: they switch this room to simulation
-  ['toggleTimeWarpSimulation', 'resetToBaseline'].forEach(name => {
-    const orig = window[name];
-    window[name] = function (...args) {
-      if (name === 'toggleTimeWarpSimulation' && live.mode !== 'sim') { live.forceSim = true; live.mode = 'sim'; renderBadge(); }
-      if (name === 'resetToBaseline' && live.forceSim) { live.forceSim = false; setTimeout(poll, 0); }
-      return orig.apply(this, args);
+  if (typeof origStep === 'function') {
+    window.stepSimulationTick = function () {
+      const STATE = getState();
+      if (live.mode === 'sim' || (STATE && STATE.isTimeWarpRunning)) return origStep();
+      if (live.forecast && STATE) STATE.co2 = live.forecast.summary.co2_now;
+      if (STATE && !STATE.isWindowOpen && STATE.countdownSeconds > 0) STATE.countdownSeconds = Math.max(0, STATE.countdownSeconds - 2);
+      const updateTimer = window.updateTimerDisplayUI || (typeof updateTimerDisplayUI === 'function' ? updateTimerDisplayUI : null);
+      if (updateTimer) updateTimer();
+      const refresh = window.refreshUI || (typeof refreshUI === 'function' ? refreshUI : null);
+      if (refresh) refresh();
     };
+  }
+
+  // Simulation demo / time-warp modes switch to sim
+  if (Caelum && Caelum.demo) {
+    const origGuidedStart = Caelum.demo.guidedStart;
+    if (typeof origGuidedStart === 'function') {
+      Caelum.demo.guidedStart = function (...args) {
+        live.forceSim = true;
+        live.mode = 'sim';
+        renderBadge();
+        return origGuidedStart.apply(this, args);
+      };
+    }
+    const origWarpToggle = Caelum.demo.warpToggle;
+    if (typeof origWarpToggle === 'function') {
+      Caelum.demo.warpToggle = function (...args) {
+        live.forceSim = true;
+        live.mode = 'sim';
+        renderBadge();
+        return origWarpToggle.apply(this, args);
+      };
+    }
+    const origReset = Caelum.resetToBaseline;
+    if (typeof origReset === 'function') {
+      Caelum.resetToBaseline = function (...args) {
+        if (live.forceSim) {
+          live.forceSim = false;
+          setTimeout(poll, 0);
+        }
+        return origReset.apply(this, args);
+      };
+    }
+  }
+
+  ['toggleTimeWarpSimulation', 'resetToBaseline'].forEach(name => {
+    if (typeof window[name] === 'function') {
+      const orig = window[name];
+      window[name] = function (...args) {
+        if (name === 'toggleTimeWarpSimulation' && live.mode !== 'sim') { live.forceSim = true; live.mode = 'sim'; renderBadge(); }
+        if (name === 'resetToBaseline' && live.forceSim) { live.forceSim = false; setTimeout(poll, 0); }
+        return orig.apply(this, args);
+      };
+    }
   });
 
   // ------------------------------------------------------------ charts
 
-  const origBuild = window.buildForecastArrays;
-  window.buildForecastArrays = function () {
-    if (live.mode === 'sim' || !live.forecast || !live.pastCo2) return origBuild();
+  function buildBackendForecastArrays() {
+    const Caelum = getCaelum();
+    if (live.mode === 'sim' || !live.forecast || !live.pastCo2) {
+      return origBuild ? origBuild() : (origCaelumBuild ? origCaelumBuild.call(Caelum) : null);
+    }
     const f = live.forecast;
     const pick = key => FUTURE_MIN.map(min => {
       const p = f.points[Math.min(f.points.length - 1, Math.round(min / 5) - 1)];
@@ -295,25 +420,66 @@
       lowerSeries: [...nulls(8), now, ...pick('co2_lower')],
       optimalSeries: [...nulls(8), now, ...pick('co2_windows_open')],
     };
-    if (typeof co2Chart !== 'undefined' && co2Chart) {
+    const chart = window.co2Chart || (typeof co2Chart !== 'undefined' ? co2Chart : null);
+    if (chart && chart.options && chart.options.scales && chart.options.scales.y) {
       const all = Object.values(series).flat().filter(v => v !== null);
-      co2Chart.options.scales.y.max = Math.max(2600, Math.ceil(Math.max(...all) * 1.1 / 100) * 100);
+      chart.options.scales.y.max = Math.max(2600, Math.ceil(Math.max(...all) * 1.1 / 100) * 100);
     }
     updateOccupancyChart();
     return series;
-  };
+  }
+
+  const origBuild = window.buildForecastArrays;
+  const origCaelumBuild = Caelum ? Caelum.buildForecastArrays : null;
+  if (Caelum) Caelum.buildForecastArrays = buildBackendForecastArrays;
+  window.buildForecastArrays = buildBackendForecastArrays;
 
   function updateOccupancyChart() {
-    if (typeof occChart === 'undefined' || !occChart || !live.pastOcc || !live.forecast) return;
+    const occ = window.occChart || (typeof occChart !== 'undefined' ? occChart : null);
+    if (!occ || !live.pastOcc || !live.forecast) return;
     const past = live.pastOcc.slice(-8).map(p => (p.people === null ? null : Math.round(p.people)));
     while (past.length < 8) past.unshift(null);
     const fut = FUTURE_MIN.map(min => {
       const p = live.forecast.points[Math.min(live.forecast.points.length - 1, Math.round(min / 5) - 1)];
       return p ? Math.round(p.people) : null;
     });
+    const STATE = getState();
     const data = [...past, STATE.occupancy, ...fut];
-    occChart.data.datasets[1].data = data;
-    occChart.options.scales.y.max = Math.max(20, Math.ceil(Math.max(...data.filter(v => v !== null), STATE.scheduledCount) * 1.2 / 5) * 5);
+    if (occ.data && occ.data.datasets && occ.data.datasets[1]) {
+      occ.data.datasets[1].data = data;
+      occ.options.scales.y.max = Math.max(20, Math.ceil(Math.max(...data.filter(v => v !== null), STATE.scheduledCount) * 1.2 / 5) * 5);
+      occ.update('none');
+    }
+  }
+
+  // Forecast timeline for Room View (index.html)
+  if (Caelum && typeof Caelum.forecastTimeline === 'function') {
+    const origTimeline = Caelum.forecastTimeline;
+    Caelum.forecastTimeline = function (horizonMin, stepMin) {
+      if (live.mode === 'sim' || !live.forecast || !live.forecast.points || !live.forecast.points.length) {
+        return origTimeline.call(Caelum, horizonMin, stepMin);
+      }
+      horizonMin = horizonMin || 240;
+      stepMin = stepMin || 5;
+      const nowTod = Caelum.clockMinutesOfDay();
+      const f = live.forecast;
+      const points = f.points;
+      const STATE = getState();
+      const out = [];
+      out.push({ t: 0, tod: nowTod, co2: f.summary.co2_now, occ: STATE.occupancy, flushing: STATE.isWindowOpen });
+      for (let t = stepMin; t <= horizonMin; t += stepMin) {
+        const idx = Math.min(points.length - 1, Math.max(0, Math.round(t / 5) - 1));
+        const p = points[idx];
+        out.push({
+          t: t,
+          tod: (nowTod + t) % 1440,
+          co2: p ? p.co2_ppm : f.summary.co2_now,
+          occ: p ? Math.round(p.people) : STATE.occupancy,
+          flushing: p ? (p.co2_windows_open < p.co2_ppm * 0.9) : false
+        });
+      }
+      return out;
+    };
   }
 
   // ------------------------------------------------------------ boards (admin)
@@ -325,7 +491,11 @@
   }
 
   async function loadBoardConfigs() {
-    const nodes = getArduinoNodes();
+    const getNodes = window.getArduinoNodes || (typeof getArduinoNodes === 'function' ? getArduinoNodes : null);
+    const saveNodes = window.saveArduinoNodes || (typeof saveArduinoNodes === 'function' ? saveArduinoNodes : null);
+    const syncUI = window.syncArduinoUI || (typeof syncArduinoUI === 'function' ? syncArduinoUI : null);
+    if (!getNodes) return;
+    const nodes = getNodes();
     await Promise.all(nodes.map(async n => {
       try {
         const cfg = await api(`/config/${encodeURIComponent(n.id)}`);
@@ -337,17 +507,20 @@
         n.status = latest && latest.online ? 'ONLINE' : 'OFFLINE';
       } catch (e) { console.warn('board config', n.id, e); }
     }));
-    saveArduinoNodes(nodes);
-    syncArduinoUI();
+    if (saveNodes) saveNodes(nodes);
+    if (syncUI) syncUI();
   }
 
   function replaceDeployButton() {
     const btn = document.getElementById('deployBleConfigBtn');
     if (!btn) return;
-    const fresh = btn.cloneNode(true); // drops the page's alert() listener
+    const getNode = window.getActiveArduinoNode || (typeof getActiveArduinoNode === 'function' ? getActiveArduinoNode : null);
+    const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener('click', async () => {
-      const node = getActiveArduinoNode();
+      if (!getNode) return;
+      const node = getNode();
+      if (!node) return;
       const threshold = parseInt(node.strength, 10);
       const body = { interval_s: Math.max(1, Math.min(60, Number(node.interval) || 5)) };
       if (Number.isInteger(threshold) && threshold >= -100 && threshold <= -30) body.threshold_dbm = threshold;
@@ -362,11 +535,16 @@
   }
 
   // Packet log: show the board's real anonymised devices when it has sent some
-  const origPush = window.pushBlePacketRow;
-  window.pushBlePacketRow = function () {
-    const node = getActiveArduinoNode();
-    const room = live.serverRooms[STATE.currentRoomId];
-    if (!live.enabled || !live.devices.length || !room || room.device !== node.id) return origPush();
+  const origPush = window.pushBlePacketRow || (typeof pushBlePacketRow === 'function' ? pushBlePacketRow : null);
+  function pushBackendBlePacketRow() {
+    const getNode = window.getActiveArduinoNode || (typeof getActiveArduinoNode === 'function' ? getActiveArduinoNode : null);
+    const STATE = getState();
+    const node = getNode ? getNode() : null;
+    const room = STATE ? live.serverRooms[STATE.currentRoomId] : null;
+    if (!live.enabled || !live.devices.length || !room || !node || room.device !== node.id) {
+      if (origPush) return origPush();
+      return;
+    }
     const stream = document.getElementById('blePacketStream');
     if (!stream) return;
     const d = live.devices[live.deviceCursor++ % live.devices.length];
@@ -382,7 +560,8 @@
         : 'bg-canvas text-inkMuted border border-borderLine'}">${accepted ? 'IN-RANGE' : 'FILTERED'}</span>`;
     stream.prepend(row);
     while (stream.children.length > 14) stream.removeChild(stream.lastChild);
-  };
+  }
+  window.pushBlePacketRow = pushBackendBlePacketRow;
 
   // ------------------------------------------------------------ status badge
 
@@ -396,7 +575,12 @@
       document.body.appendChild(badge);
       badge.addEventListener('click', e => {
         const action = e.target.dataset.action;
-        if (action === 'toggle') { live.forceSim = !live.forceSim; if (!live.forceSim) STATE.isTimeWarpRunning = false; poll(); }
+        if (action === 'toggle') {
+          live.forceSim = !live.forceSim;
+          const STATE = getState();
+          if (STATE && !live.forceSim) STATE.isTimeWarpRunning = false;
+          poll();
+        }
         if (action === 'weekday') {
           if (localStorage.getItem('hackaburger_weekday')) localStorage.removeItem('hackaburger_weekday');
           else localStorage.setItem('hackaburger_weekday', 'wed');
@@ -405,13 +589,14 @@
         if (action === 'connect') { apiKey(true) && start(); }
       });
     }
-    const room = live.serverRooms[STATE.currentRoomId];
+    const STATE = getState();
+    const room = STATE ? live.serverRooms[STATE.currentRoomId] : null;
     const colours = { live: '#2DD4BF', model: '#60A5FA', sim: '#FBBF24' };
     let text;
     if (!live.enabled) {
       text = live.error ? `Backend unavailable (${live.error}) · simulation` : 'Offline simulation';
     } else if (live.mode === 'live') {
-      text = `LIVE · ${room.device} · ${live.board.devices_in_range} devices in range`;
+      text = `LIVE · ${room && room.device ? room.device : 'board'} · ${live.board ? live.board.devices_in_range : 0} devices in range`;
     } else if (live.mode === 'model') {
       text = `MODEL · ${room && room.device ? `${room.device} offline` : 'no board'} · forecast from history`;
     } else {
@@ -425,6 +610,21 @@
       + (live.enabled && live.mode !== 'sim' && ago ? `<span style="color:#6B7280">${ago}</span>` : '')
       + (live.enabled ? btn('toggle', live.forceSim ? 'use server data' : 'simulate') : btn('connect', 'connect'))
       + (live.enabled && live.mode !== 'sim' ? btn('weekday', weekday ? `pattern: ${weekday} (reset)` : 'use weekday pattern') : '');
+
+    // Synchronize the Room View header badge if on index.html
+    const headerBadge = document.querySelector('.badge-sim');
+    if (headerBadge) {
+      if (live.enabled && live.mode === 'live') {
+        headerBadge.innerHTML = `<i style="background:#22C55E"></i>LIVE${room && room.device ? ` (${room.device.toUpperCase()})` : ''}`;
+        headerBadge.title = 'Live occupancy from Bluetooth Low Energy scanner';
+      } else if (live.enabled && live.mode === 'model') {
+        headerBadge.innerHTML = `<i style="background:#0EA5E9"></i>MODEL`;
+        headerBadge.title = 'Forecast derived from 7-30 day historical machine learning model';
+      } else {
+        headerBadge.innerHTML = `<i style="background:#F59E0B"></i>SIMULATED`;
+        headerBadge.title = 'Values are produced by the local simulation engine';
+      }
+    }
   }
 
   function showToast(msg, isError) {
@@ -454,14 +654,20 @@
       await migrateLocalRooms();
       setupRangeSelect();
       replaceDeployButton();
-      const ids = DEFAULT_ROOMS.concat(live.customs).map(r => r.id);
-      const current = ids.includes(STATE.currentRoomId) ? STATE.currentRoomId : ids[0];
-      populateRoomSelector(current);
-      window.switchRoom(current);
+      const STATE = getState();
+      const defRooms = getDefaultRooms();
+      const ids = defRooms.concat(live.customs).map(r => r.id);
+      const current = (STATE && ids.includes(STATE.currentRoomId)) ? STATE.currentRoomId : ids[0];
+      const popRoom = window.populateRoomSelector || (typeof populateRoomSelector === 'function' ? populateRoomSelector : null);
+      if (popRoom) popRoom(current);
+      const Caelum = getCaelum();
+      if (Caelum && typeof Caelum.switchRoom === 'function') Caelum.switchRoom(current);
+      else if (typeof window.switchRoom === 'function') window.switchRoom(current);
       loadBoardConfigs();
       clearInterval(live.polling);
       live.polling = setInterval(poll, POLL_MS);
       if (!live.badgeTimer) live.badgeTimer = setInterval(renderBadge, 1000);
+      poll();
     } catch (e) {
       live.enabled = false;
       live.error = e.message;
@@ -471,5 +677,9 @@
   }
 
   window.hackaburgerBackend = live; // for debugging in the console
-  window.addEventListener('load', start);
+  if (document.readyState === 'loading') {
+    window.addEventListener('load', start);
+  } else {
+    setTimeout(start, 0);
+  }
 })();

@@ -102,7 +102,8 @@
   }
 
   function getAllRooms() {
-    return DEFAULT_ROOMS.concat(getCustomRooms());
+    var customs = (root.Caelum && root.Caelum.getCustomRooms) ? root.Caelum.getCustomRooms() : getCustomRooms();
+    return DEFAULT_ROOMS.concat(customs);
   }
 
   function roomShortName(room) {
@@ -667,14 +668,15 @@
      6. ROOM ACTIONS (each one emits exactly once)
      ===================================================================== */
   function saveCurrentRoomChangesIfCustom() {
-    var customs = getCustomRooms();
+    var customs = (root.Caelum && root.Caelum.getCustomRooms) ? root.Caelum.getCustomRooms() : getCustomRooms();
     var idx = customs.findIndex(function (r) { return r.id === STATE.currentRoomId; });
     if (idx !== -1) {
       customs[idx].volume = STATE.roomVolume;
       customs[idx].occupancy = STATE.occupancy;
       customs[idx].scheduledCount = STATE.scheduledCount;
       customs[idx].windows = JSON.parse(JSON.stringify(STATE.windows));
-      saveCustomRooms(customs);
+      if (root.Caelum && root.Caelum.saveCustomRooms) root.Caelum.saveCustomRooms(customs);
+      else saveCustomRooms(customs);
     }
   }
 
@@ -776,6 +778,11 @@
      ===================================================================== */
   // Advance the model by `minutes` sim-minutes (windows/occupancy as-is).
   function advanceModel(minutes) {
+    if (root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim') {
+      STATE.simMinutesFrom9AM += minutes;
+      if (FLUSH.running) FLUSH.elapsedSec += minutes * 60;
+      return;
+    }
     var q = getCurrentAirflowQ();
     STATE.co2 = stepMassBalanceCO2(
       STATE.co2, STATE.occupancy, STATE.roomVolume, q, minutes / 60.0, STATE.co2GenPerPerson

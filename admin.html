@@ -1076,9 +1076,9 @@
        Shared engine, models, forecast, sim clock and sync live in js/engine.js
        ===================================================================== */
     const {
-      STATE, DEFAULT_ROOMS, getCustomRooms, saveCustomRooms,
+      STATE, DEFAULT_ROOMS,
       getAirflowQ, getCurrentAirflowQ, stepMassBalanceCO2,
-      evaluateHarvardCOGfx, buildForecastArrays
+      evaluateHarvardCOGfx
     } = Caelum;
     const byId = (id) => document.getElementById(id);
 
@@ -1398,7 +1398,7 @@
     };
 
     function initCharts() {
-      const series = buildForecastArrays();
+      const series = Caelum.buildForecastArrays();
       const ctx1 = document.getElementById('co2ForecastChart').getContext('2d');
 
       co2Chart = new Chart(ctx1, {
@@ -1564,6 +1564,8 @@
           }
         }
       });
+      window.co2Chart = co2Chart;
+      window.occChart = occChart;
     }
 
     /* =====================================================================
@@ -2190,7 +2192,7 @@
 
       // Recompute Multi-Horizon Charts
       if (co2Chart && occChart) {
-        const updated = buildForecastArrays();
+        const updated = Caelum.buildForecastArrays();
         co2Chart.data.datasets[0].data = updated.pastSeries;
         co2Chart.data.datasets[1].data = updated.groundTruthSeries;
         co2Chart.data.datasets[2].data = updated.forecastSeries;
@@ -2222,7 +2224,7 @@
       });
       select.appendChild(defGroup);
 
-      const customs = getCustomRooms();
+      const customs = Caelum.getCustomRooms();
       if (customs.length > 0) {
         const custGroup = document.createElement('optgroup');
         custGroup.label = 'Custom Configured Zones';
@@ -2242,7 +2244,7 @@
     function updateDeleteRoomBtnVisibility() {
       const delBtn = document.getElementById('deleteRoomBtn');
       if (!delBtn) return;
-      const customs = getCustomRooms();
+      const customs = Caelum.getCustomRooms();
       const isCustom = customs.some(r => r.id === STATE.currentRoomId);
       if (isCustom) {
         delBtn.classList.remove('hidden');
@@ -2336,9 +2338,9 @@
         isCustom: true
       };
 
-      const customs = getCustomRooms();
+      const customs = Caelum.getCustomRooms();
       customs.push(newRoom);
-      saveCustomRooms(customs);
+      Caelum.saveCustomRooms(customs);
 
       closeAddRoomModal();
       populateRoomSelector(newRoom.id);
@@ -2346,13 +2348,13 @@
     }
 
     function deleteCurrentCustomRoom() {
-      const customs = getCustomRooms();
+      const customs = Caelum.getCustomRooms();
       const current = customs.find(r => r.id === STATE.currentRoomId);
       if (!current) return;
 
       if (confirm(`Delete custom zone "${current.name}"?`)) {
         const remaining = customs.filter(r => r.id !== STATE.currentRoomId);
-        saveCustomRooms(remaining);
+        Caelum.saveCustomRooms(remaining);
         populateRoomSelector('appleton');
         Caelum.switchRoom('appleton');
       }
@@ -2743,7 +2745,19 @@
       btnBle.addEventListener('click', () => setBottomTab('ble'));
 
       window.addEventListener('resize', resizeCadCanvas);
+
+      // Expose helpers for backend.js adapter
+      window.populateRoomSelector = populateRoomSelector;
+      window.updateWindowControlsUI = updateWindowControlsUI;
+      window.refreshUI = refreshUI;
+      window.getArduinoNodes = getArduinoNodes;
+      window.saveArduinoNodes = saveArduinoNodes;
+      window.syncArduinoUI = syncArduinoUI;
+      window.getActiveArduinoNode = getActiveArduinoNode;
+      window.pushBlePacketRow = pushBlePacketRow;
     };
   </script>
+  <!-- Backend connection (rooms, live occupancy, CO2 forecast, board fleet). Keep this after page scripts. -->
+  <script src="backend.js"></script>
 </body>
 </html>

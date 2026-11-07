@@ -7,6 +7,7 @@ Rounding: people = floor(people_raw + 0.5), i.e. round half up (2.5 -> 3).
 All paths here are served publicly under /ingest/ (nginx strips the prefix).
 """
 
+import asyncio
 import json
 import os
 import sqlite3
@@ -20,42 +21,13 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import forecast, rooms
+from app import forecast, heatmap, rooms
+from app.boards import apply_changes, get_config, validate_changes
 from app.core import (API_KEY, bucket_people, check_device, count, db, is_number, iso, parse_time,
                       require_key, round_half_up, time_range)
 
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", 256 * 1024))  # matches nginx client_max_body_size
 MAX_DEVICES = 5000
-
-DEFAULT_CONFIG = {
-    "config_version": 1,
-    "enabled": True,
-    "threshold_dbm": -75,
-    "window_s": 30,
-    "interval_s": 5,
-    "people_factor": 0.7,
-    "send_devices": True,
-    "display": True,
-    "send_every_s": 300,  # POST on clock boundaries every N s; 0 = every interval_s (live)
-}
-PRESETS = {
-    "room": {"threshold_dbm": -75, "window_s": 30, "interval_s": 5, "send_every_s": 300},
-    "demo": {"threshold_dbm": -40, "window_s": 6, "interval_s": 1, "send_every_s": 0},
-    "venue": {"threshold_dbm": -100, "window_s": 30, "interval_s": 5, "send_every_s": 300},
-}
-INITIAL_PRESET = {"uno-q-1": "room", "uno-q-2": "demo"}
-
-# field -> (types, min, max); bool is checked separately because bool is an int subclass
-CONFIG_FIELDS = {
-    "enabled": (bool, None, None),
-    "threshold_dbm": (int, -100, -30),
-    "window_s": (int, 2, 300),
-    "interval_s": ((int, float), 1, 600),
-    "send_every_s": (int, 0, 3600),
-    "people_factor": ((int, float), 0.1, 2.0),
-    "send_devices": (bool, None, None),
-    "display": (bool, None, None),
-}
 
 NEW_COLUMNS = {
     "measured_at": "REAL",  # unix time from ts, else received_at
@@ -104,15 +76,6 @@ def compute(data: dict, rssis: list[float] | None, threshold: int, factor: float
     return {"source": None, "devices_in_range": None, "heard_total": heard, "people_raw": None}
 
 
-def get_config(conn: sqlite3.Connection, device: str) -> dict:
-    row = conn.execute("SELECT config FROM configs WHERE device = ?", (device,)).fetchone()
-    if row:
-        return {**DEFAULT_CONFIG, **json.loads(row["config"])}
-    cfg = {**DEFAULT_CONFIG, **PRESETS.get(INITIAL_PRESET.get(device, ""), {})}
-    conn.execute("INSERT OR IGNORE INTO configs (device, config) VALUES (?, ?)", (device, json.dumps(cfg)))
-    return cfg
-
-
 def migrate(conn: sqlite3.Connection):
     conn.execute(
         """CREATE TABLE IF NOT EXISTS readings (
@@ -159,12 +122,17 @@ async def lifespan(app: FastAPI):
         migrate(conn)
         rooms.migrate(conn)
         forecast.migrate(conn)
+        heatmap.migrate(conn)
+    loop = asyncio.create_task(heatmap.background_loop()) if heatmap.TICK_S > 0 else None
     yield
+    if loop:
+        loop.cancel()
 
 
 app = FastAPI(title="hackaburger arduino-ingest", lifespan=lifespan)
 app.include_router(rooms.router)
 app.include_router(forecast.router)
+app.include_router(heatmap.router)
 # The frontend may be opened from anywhere (file://, localhost); every call still needs X-API-Key
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -222,6 +190,7 @@ def ingest(body: Any = Body(...)):
             )
         # A batch normally comes from one board; reply with the last reading's config
         cfg = get_config(conn, readings[-1][0])
+    heatmap.after_ingest({device for device, *_ in readings})
     return {"stored": len(readings), "dropped": dropped, "config": cfg}
 
 
@@ -265,37 +234,11 @@ def read_config(device: str):
 @app.put("/config/{device}", dependencies=[Depends(require_key)])
 def update_config(device: str, changes: Any = Body(...)):
     check_device(device)
-    if not isinstance(changes, dict) or not changes:
-        raise HTTPException(422, "body must be a non-empty JSON object")
-    changes = dict(changes)
-    if "config_version" in changes:
-        raise HTTPException(422, "config_version is managed by the server")
-    update = {}
-    if "preset" in changes:
-        preset = changes.pop("preset")
-        if preset not in PRESETS:
-            raise HTTPException(422, f"preset must be one of {sorted(PRESETS)}")
-        update.update(PRESETS[preset])
-    for field, value in changes.items():
-        if field not in CONFIG_FIELDS:
-            raise HTTPException(422, f"unknown field: {field}")
-        types, lo, hi = CONFIG_FIELDS[field]
-        if types is bool:
-            if not isinstance(value, bool):
-                raise HTTPException(422, f"{field} must be true or false")
-        else:
-            if isinstance(value, bool) or not isinstance(value, types):
-                raise HTTPException(422, f"{field} must be {'an integer' if types is int else 'a number'}")
-            if not lo <= value <= hi:
-                raise HTTPException(422, f"{field} must be between {lo} and {hi}")
-        update[field] = value
+    update = validate_changes(changes)
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        cfg = get_config(conn, device)
-        cfg.update(update)
-        cfg["config_version"] += 1
-        conn.execute("UPDATE configs SET config = ? WHERE device = ?", (json.dumps(cfg), device))
-    return cfg
+        heatmap.check_single_board_change(conn, device, update)
+        return apply_changes(conn, device, update)
 
 
 @app.get("/occupancy/latest", dependencies=[Depends(require_key)])

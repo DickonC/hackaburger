@@ -16,12 +16,14 @@ from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
+from app import heatmap
 from app.core import DEVICE_RE, bucket_people, db, is_number, iso, require_key, time_range
 
 STEP_S = 300
 WARMUP_S = 12 * 3600  # CO2 is simulated from outdoor level this long before the requested range
 LIVE_MAX_AGE_S = 600  # a board reading older than this isn't "now"
 ROOM_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+HEATMAP_DEVICE = "heatmap"  # a room whose people come from the four-board heatmap
 
 ROOM_DEFAULTS = {
     "capacity": 32,
@@ -188,8 +190,13 @@ def slugify(name: str) -> str:
 # ---------------------------------------------------------------- people and CO2
 
 def board_people(conn: sqlite3.Connection, room: dict, start: float, end: float, step_s: float) -> list[float | None]:
-    """The room's board count per bucket (None where the board sent nothing)."""
+    """The room's people per bucket (None where there's no data).
+
+    device is a board name (that board's count) or "heatmap" (the four-board heatmap's estimate).
+    """
     n = math.ceil((end - start) / step_s)
+    if room["device"] == HEATMAP_DEVICE:
+        return heatmap.people_buckets(conn, start, end, step_s)
     return bucket_people(conn, room["device"], start, end, step_s) if room["device"] else [None] * n
 
 

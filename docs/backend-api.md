@@ -141,3 +141,31 @@ A forecast looks like this:
 The forecast chart for a live room is the page's own engine projecting forward from the live state.
 
 Showing the dataset forecasts and replays in the UI (`/dataset/...`) isn't built yet.
+
+## Room heatmap (four corner boards)
+
+This is built to [`heatmap-backend-guide.md`](heatmap-backend-guide.md); all its acceptance checks are covered by `arduino-ingest/tests/test_heatmap.py`. The code is in `arduino-ingest/app/heatmap.py`.
+
+| Call | What |
+|---|---|
+| `GET /heatmap/latest` | People estimate, smoothed people, funnel, per-board status (online, applied/pending config), calibration in use, heatmap grid, warnings |
+| `GET /heatmap/debug[?ts=]` | Every device in a snapshot: RSSI per board, position, `in_room` / `rejected` + reason |
+| `GET /heatmap/history?from=&to=&step_s=60` | Mean people estimate per bucket |
+| `GET / PUT /heatmap/config` | Room size, board corners, filter, offsets, heatmap and people settings (partial `PUT`, deep merge) |
+| `PUT /heatmap/mode` | `{"mode": "live"}` (all boards send every 10 s; needed for the heatmap) or `{"mode": "dev"}` (every 5 min) |
+| `PUT /heatmap/boards` | The same board settings for all heatmap boards, e.g. `{"threshold_dbm": -60}` (LED range) |
+| `POST /heatmap/calibrate/headcount` | `{"people": n}`, counted in the room now: sets `devices_per_person` |
+
+**Choices beyond the guide:**
+- **Calibrated values set by hand switch to manual.** `PUT {"filter": {"edge_dbm": -95}}` switches `edge_mode` to `manual`, and setting `offsets_db` switches `offsets_mode` to `manual`. Otherwise the auto calibration would immediately overwrite the value. Send `"edge_mode": "auto"` to go back.
+- **Board timing is enforced.** `PUT /config/{device}` with an `interval_s` or `window_s` that differs from the other heatmap boards returns `422`; change them together with `PUT /heatmap/boards`.
+- **`uno-q-2` no longer starts in demo settings,** because all four boards must share the same timing.
+- **Extra warnings:**
+  - a board that sent recently but is **missing from the latest snapshot**
+  - boards with different timing
+  - boards still waiting to apply new settings
+- **Feeding the CO₂ estimate:** a live room with `"device": "heatmap"` takes its people from the heatmap (`people_estimate`) instead of a single board.
+- **Privacy:**
+  - Per-device debug rows are deleted after 24 hours.
+  - Board messages older than 24 hours lose their device-id list. They keep the anonymous RSSI values (`readings.rssis`), so recounts still work.
+- **Timing:** a snapshot is built as soon as all boards have sent for a `ts`, or 15 s after the first one. A background loop checks every 2 s. Board messages more than an hour late don't start a snapshot.

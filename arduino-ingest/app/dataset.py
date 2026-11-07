@@ -81,6 +81,30 @@ def validate_co2(wide: pd.DataFrame, letter: str, cal: dict) -> float:
     return round(float(np.mean(errors)), 1) if errors else float("nan")
 
 
+def replay_suggestions(n: pd.Series, limit: int = 12) -> list[str]:
+    """Weekday 08:00-14:00 moments where a replay can use the short-term models and be checked.
+
+    The count must be recorded at the moment, 5 minutes, 1 day and 1 week before it, and for
+    at least 90% of the following 8 hours. Spread over the year, busiest first.
+    """
+    s = n.groupby(n.index).first()  # DST fall-back duplicates
+    s = s.asfreq("5min")
+    ok = []
+    for t in s.index[(s.index.day_of_week < 5) & (s.index.minute == 0) & (s.index.hour >= 8) & (s.index.hour <= 14)]:
+        if any(pd.isna(s.get(t - pd.Timedelta(d))) for d in ("0min", "5min", "1D", "7D")):
+            continue
+        ahead = s.loc[t:t + pd.Timedelta("8h")]
+        if ahead.notna().mean() >= 0.9:
+            ok.append((t, float(ahead.sum())))
+    by_week = {}
+    for t, busy in ok:  # at most one per ISO week: the busiest
+        key = t.isocalendar()[:2]
+        if key not in by_week or busy > by_week[key][1]:
+            by_week[key] = (t, busy)
+    best = sorted(by_week.values(), key=lambda x: -x[1])[:limit]
+    return [t.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ") for t, _ in sorted(best)]
+
+
 def import_rooms(conn: sqlite3.Connection, wide: pd.DataFrame) -> dict:
     report = {}
     conn.execute("DELETE FROM dataset_occupancy WHERE room_id LIKE 'aalborg-%'")
@@ -106,6 +130,7 @@ def import_rooms(conn: sqlite3.Connection, wide: pd.DataFrame) -> dict:
             "window_area_m2": WINDOW_AREA_M2,
             "calibration": {"steady_hours": cal["steady_hours"], "co2_model_mae_ppm": validate_co2(wide, letter, cal),
                             "volume_assumed": cal["volume_m3"] == 60.0},
+            "replay_suggestions": replay_suggestions(n),
             "source": f"doi:{aalborg.DOI} (CC BY 4.0)",
         }
     return report

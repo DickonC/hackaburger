@@ -122,6 +122,22 @@ def test_dataset_auth_required(client, path):
     assert client.get(path).status_code == 401
 
 
+def test_replay_suggestions_need_complete_data():
+    import numpy as np
+    import pandas as pd
+    from app.dataset import replay_suggestions
+    idx = pd.date_range("2023-03-06", periods=4 * 7 * 288, freq="5min", tz=TZ)
+    n = pd.Series(np.where((idx.day_of_week < 5) & (idx.hour >= 9) & (idx.hour < 17), 3.0, 0.0), index=idx)
+    n[(idx >= pd.Timestamp("2023-03-20", tz=TZ)) & (idx < pd.Timestamp("2023-03-23", tz=TZ))] = np.nan  # cameras off
+    got = [pd.Timestamp(t).tz_convert(TZ) for t in replay_suggestions(n)]
+    assert got and all(t >= pd.Timestamp("2023-03-13", tz=TZ) for t in got)  # needs a week before
+    assert all(t.day_of_week < 5 and 8 <= t.hour <= 14 and t.minute == 0 for t in got)
+    for t in got:  # no gap at, 1 day or 1 week before
+        for d in ("0min", "1D", "7D"):
+            assert not pd.isna(n.get(t - pd.Timedelta(d)))
+    assert len({t.isocalendar()[:2] for t in got}) == len(got)  # one per week
+
+
 def test_co2_calibration_recovers_known_room():
     # Simulate a room with known airflow/volume, then check dataset.calibrate_co2 finds them
     import numpy as np

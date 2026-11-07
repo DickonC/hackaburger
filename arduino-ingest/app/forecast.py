@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core import db, iso, parse_time, require_key, time_range
 from app.rooms import step_co2
+from app.ventilation import advice as window_advice
 
 sys.path.insert(0, os.environ.get("FORECASTER_DIR", "/app/occupancy_forecaster"))
 from rolling_24h import fit_calendar_24h, forecast_clock_24h  # noqa: E402
@@ -244,6 +245,8 @@ def read_forecast(room_id: str, hours: int = Query(default=24, ge=1, le=24),
     summary = {"people_now": people_now, "co2_now": round(c0), "window_open_now": window_now,
                "peak_co2": peak["co2_ppm"], "peak_at": peak["ts"],
                "first_above_1000_at": next((p["ts"] for p in points if p["co2_ppm"] >= 1000), None)}
+    summary["ventilation"] = window_advice(c0, origin, times, expected, cr, room["airflow_m3h"], window_q,
+                                           window_now, people_low=lower, people_high=upper)
     result = {"room_id": room_id, "origin": iso(origin), "replay": replay,
               "as_weekday": as_weekday.strip().lower()[:3] if as_weekday else None,
               "model": "short_term+historical_time_of_week" if used_short else "historical_time_of_week",

@@ -85,7 +85,7 @@ This is a **deliberate, defensible multi-timescale design**:
 
 ### Current research limitations
 
-- The training data are six small Danish offices in 2023, with camera-count gaps of whole days or weeks. Applying their patterns to another room (the backend `model_from` setting) assumes that room is used like an office.
+- The training data are six small Danish offices in 2023, with camera-count gaps of whole days or weeks. The backend forecasts only these rooms; our own boards would need a few weeks of readings before the same training applies to our rooms.
 - With no Bluetooth observations, the 24-hour projection is a **scenario assumption**. There is no honest measured error or live accuracy number to report.
 - The long-horizon reference band is calibrated on past points (not conditional on forecast horizon) and should be described as *indicative*. Review its coverage after real observations arrive.
 - Opening a window should not be controlled from these occupancy assumptions alone. The later CO₂ prediction task needs actual ventilation and room parameters and preferably a CO₂ sensor.

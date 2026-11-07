@@ -680,7 +680,7 @@
         sub.textContent = fresh
           ? 'The air has recovered. You can close the windows.'
           : 'Open for ' + mmss(Caelum.FLUSH.elapsedSec) + ' · ' + plural(STATE.openWindowCount, 'window') + ' · CO₂ ' + ppm(STATE.co2) + ' ppm and falling.';
-        btn.textContent = 'We closed them';
+        btn.textContent = 'I closed them';
         btn.className = 'btn-big go';
       } else if (rec.over) {
         mode = 'open';

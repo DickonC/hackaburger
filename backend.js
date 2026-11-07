@@ -38,7 +38,12 @@
     serverRooms: {},     // id -> server room
     forecast: null, pastCo2: null, pastOcc: null, board: null, devices: [], deviceCursor: 0,
     configs: {},         // device -> board config
-    lastUpdate: 0, error: null, polling: null, badgeTimer: null,
+    heatmap: null,       // GET /heatmap/latest, when the room's device is "heatmap"
+    heatmapConfig: null, // GET /heatmap/config
+    heatmapBoard: null,  // shared board settings (enabled, display) from uno-q-1
+    heatmapDebug: null,  // GET /heatmap/debug, only while the admin devices view is open
+    debugOn: false,
+    lastUpdate: 0, error: null, polling: null, pollMs: 0, debugTimer: null, badgeTimer: null,
     pendingUpdates: {}, // room id -> debounce timer for PUTs (sliders fire many changes)
   };
 
@@ -254,6 +259,49 @@
 
   // ------------------------------------------------------------ live occupancy / CO2
 
+  function ensurePoll(ms) {
+    if (live.polling && live.pollMs === ms) return;
+    live.pollMs = ms;
+    clearInterval(live.polling);
+    live.polling = setInterval(poll, ms);
+  }
+
+  async function pollDebug() {
+    if (!live.debugOn || !live.enabled) return;
+    try {
+      live.heatmapDebug = await api('/heatmap/debug');
+      live.debugError = null;
+    } catch (e) {
+      live.debugError = e.message;
+    }
+  }
+
+  function setHeatmapDebug(on) {
+    on = !!on;
+    if (on === live.debugOn) return;
+    live.debugOn = on;
+    clearInterval(live.debugTimer);
+    live.debugTimer = null;
+    if (!on) {
+      live.heatmapDebug = null;
+      return;
+    }
+    pollDebug();
+    live.debugTimer = setInterval(pollDebug, 5000);
+  }
+
+  async function putHeatmap(path, body, method) {
+    const result = await api(path, { method: method || 'PUT', body });
+    poll();
+    return result;
+  }
+
+  live.setHeatmapDebug = setHeatmapDebug;
+  live.putHeatmapConfig = (body) => putHeatmap('/heatmap/config', body);
+  live.putHeatmapMode = (mode) => putHeatmap('/heatmap/mode', { mode });
+  live.putHeatmapBoards = (body) => putHeatmap('/heatmap/boards', body);
+  live.calibrateHeadcount = (people) => putHeatmap('/heatmap/calibrate/headcount', { people }, 'POST');
+
   async function poll() {
     if (!live.enabled) return;
     const Caelum = getCaelum();
@@ -270,28 +318,48 @@
     if (!room) { live.mode = 'sim'; renderBadge(); return; }
     const now = Date.now();
     const from = new Date(now - 2 * 3600 * 1000).toISOString();
+    const heatRoom = room.device === 'heatmap';
     try {
       // Live rooms have no server forecast (forecasting runs on the dataset rooms, /dataset/...):
       // the "now" values come from the CO2 estimate, and the future comes from the page's own engine.
-      const [pastCo2, pastOcc, latest] = await Promise.all([
+      // A room with device "heatmap" takes its people from the four corner boards.
+      const [pastCo2, pastOcc, third, heatCfg, heatBoard] = await Promise.all([
         api(`/rooms/${encodeURIComponent(roomId)}/co2?from=${from}&step_s=900`),
         api(`/rooms/${encodeURIComponent(roomId)}/occupancy?from=${from}&step_s=900`),
-        room.device ? api(`/data?device=${encodeURIComponent(room.device)}&limit=1`) : [],
+        heatRoom ? api('/heatmap/latest')
+          : room.device ? api(`/data?device=${encodeURIComponent(room.device)}&limit=1`)
+            : [],
+        heatRoom ? api('/heatmap/config') : null,
+        heatRoom ? api('/config/uno-q-1').catch(() => null) : null,
       ]);
-      const board = latest.length ? await api(`/occupancy/latest?device=${encodeURIComponent(room.device)}`) : null;
-      const forecast = { live_people: pastCo2.now.people, model: 'live_board', points: [],
+      const latest = heatRoom ? [] : third;
+      const board = !heatRoom && latest.length
+        ? await api(`/occupancy/latest?device=${encodeURIComponent(room.device)}`)
+        : null;
+      const forecast = { live_people: pastCo2.now.people, model: heatRoom ? 'heatmap' : 'live_board', points: [],
                          summary: { co2_now: pastCo2.now.co2_ppm, first_above_1000_at: null } };
       if (STATE.currentRoomId !== roomId) return; // switched while loading
-      Object.assign(live, { forecast, pastCo2: pastCo2.points, pastOcc: pastOcc.points, board, error: null, lastUpdate: Date.now() });
-      const devices = (latest[0] && latest[0].data && latest[0].data.devices) || [];
-      if (latest[0] && latest[0].id !== live.lastReadingId) {
-        live.lastReadingId = latest[0].id;
-        live.devices = devices.slice().sort((a, b) => b.rssi - a.rssi);
-        live.deviceCursor = 0;
+      Object.assign(live, {
+        forecast, pastCo2: pastCo2.points, pastOcc: pastOcc.points, board, error: null, lastUpdate: Date.now(),
+        heatmap: heatRoom ? third : null,
+        heatmapConfig: heatRoom ? heatCfg : null,
+        heatmapBoard: heatRoom && heatBoard ? heatBoard : live.heatmapBoard,
+      });
+      if (!heatRoom) {
+        const devices = (latest[0] && latest[0].data && latest[0].data.devices) || [];
+        if (latest[0] && latest[0].id !== live.lastReadingId) {
+          live.lastReadingId = latest[0].id;
+          live.devices = devices.slice().sort((a, b) => b.rssi - a.rssi);
+          live.deviceCursor = 0;
+        }
+      } else {
+        live.devices = [];
+        if (live.debugOn) pollDebug();
       }
-      const hasBoard = forecast.live_people !== null && board && board.online;
+      const hasBoard = heatRoom || (forecast.live_people !== null && board && board.online);
       live.mode = live.forceSim ? 'sim' : hasBoard ? 'live' : 'sim';
       if (live.mode !== 'sim') applyLiveState();
+      ensurePoll(heatRoom && !live.forceSim && live.heatmap && live.heatmap.mode === 'dev' ? 60000 : POLL_MS);
     } catch (e) {
       if (e.status === 401) {
         live.enabled = false;
@@ -309,7 +377,8 @@
     if (!STATE || !f) return;
     const room = live.serverRooms[STATE.currentRoomId];
     if (!room) return;
-    const people = f.live_people !== null ? f.live_people : (f.points && f.points[0] ? f.points[0].people : 0);
+    const heatPeople = live.heatmap && live.heatmap.people_smoothed;
+    const people = heatPeople != null ? heatPeople : (f.live_people !== null ? f.live_people : (f.points && f.points[0] ? f.points[0].people : 0));
     STATE.occupancy = Math.max(0, Math.round(people));
     STATE.co2 = f.summary.co2_now;
     STATE.roomVolume = room.volume_m3;
@@ -412,7 +481,6 @@
         while (past.length < 9) past.unshift(null);
         past[8] = f.summary.co2_now;
         series.pastSeries = [...past, ...Array(9).fill(null)];
-        series.groundTruthSeries = Array(18).fill(null); // no CO2 sensor
       }
       updateOccupancyChart();
       return series;
@@ -428,7 +496,6 @@
     const nulls = n => Array(n).fill(null);
     const series = {
       pastSeries: [...past, ...nulls(9)],
-      groundTruthSeries: nulls(18), // no CO2 sensor
       forecastSeries: [...nulls(8), now, ...pick('co2_ppm')],
       upperSeries: [...nulls(8), now, ...pick('co2_upper')],
       lowerSeries: [...nulls(8), now, ...pick('co2_lower')],
@@ -559,6 +626,7 @@
     const STATE = getState();
     const node = getNode ? getNode() : null;
     const room = STATE ? live.serverRooms[STATE.currentRoomId] : null;
+    if (live.enabled && room && room.device === 'heatmap' && live.mode === 'live') return;
     if (!live.enabled || !live.devices.length || !room || !node || room.device !== node.id) {
       if (origPush) return origPush();
       return;
@@ -614,6 +682,10 @@
     let text;
     if (!live.enabled) {
       text = live.error ? `Backend unavailable (${live.error}) · simulation` : 'Offline simulation';
+    } else if (live.mode === 'live' && room && room.device === 'heatmap') {
+      const n = live.heatmap && live.heatmap.people_smoothed;
+      const devs = live.heatmap && live.heatmap.devices_in_room;
+      text = `LIVE · heatmap · ${n == null ? 'waiting' : n + ' people'}${devs == null ? '' : ' · ' + devs + ' devices'}`;
     } else if (live.mode === 'live') {
       text = `LIVE · ${room && room.device ? room.device : 'board'} · ${live.board ? live.board.devices_in_range : 0} devices in range`;
     } else if (live.mode === 'model') {
@@ -634,7 +706,8 @@
     const headerBadge = document.querySelector('.badge-sim');
     if (headerBadge) {
       if (live.enabled && live.mode === 'live') {
-        headerBadge.innerHTML = `<i style="background:#22C55E"></i>LIVE${room && room.device ? ` (${room.device.toUpperCase()})` : ''}`;
+        const deviceLabel = room && room.device && room.device !== 'heatmap' ? ` (${room.device.toUpperCase()})` : '';
+        headerBadge.innerHTML = `<i style="background:#22C55E"></i>LIVE${deviceLabel}`;
         headerBadge.title = 'Live occupancy from Bluetooth Low Energy scanner';
       } else if (live.enabled && live.mode === 'model') {
         headerBadge.innerHTML = `<i style="background:#0EA5E9"></i>MODEL`;
@@ -683,8 +756,7 @@
       if (Caelum && typeof Caelum.switchRoom === 'function') Caelum.switchRoom(current);
       else if (typeof window.switchRoom === 'function') window.switchRoom(current);
       loadBoardConfigs();
-      clearInterval(live.polling);
-      live.polling = setInterval(poll, POLL_MS);
+      ensurePoll(POLL_MS);
       if (!live.badgeTimer) live.badgeTimer = setInterval(renderBadge, 1000);
       poll();
     } catch (e) {

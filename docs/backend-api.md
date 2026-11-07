@@ -113,9 +113,35 @@ These match the chart's "no intervention" and "optimal flush" lines and the unce
 
 **`as_weekday=mon…sun`** uses another weekday's pattern. The synthetic data is an office, so a real Saturday forecast shows an almost empty room. Use `as_weekday=wed` for a weekday demo on the weekend.
 
-## Wiring the frontend
+## Frontend connection (`backend.js`)
 
-`index.html` currently simulates everything in the browser. Replace these:
+`index.html` loads [`backend.js`](../backend.js) as its last script. All the backend wiring is in that file; the only line added to `index.html` is the `<script>` tag. It hooks the page's own functions (`getCustomRooms`, `saveCustomRooms`, `switchRoom`, `buildForecastArrays`, `stepSimulationTick`, the window toggles and `pushBlePacketRow`), so the page keeps working while it's being redesigned.
+
+**Data mode for the current room:**
+
+| Mode (badge, bottom-left) | When | Data shown |
+|---|---|---|
+| `LIVE` | The room's board is online | Board count, server CO₂ and forecast |
+| `MODEL` | No live board, but the room has ≥ 4 weeks of history | Forecaster's expected count, server CO₂ and forecast |
+| `SIMULATION` | No data for the room, the backend is unreachable, or "simulate" was clicked | The original in-browser simulation |
+
+**What it changes:**
+- **Rooms** load from `/rooms`. Creating, editing and deleting custom rooms saves to the server. Old `localStorage` custom rooms are uploaded once.
+- **Opening or closing windows** is saved with `PUT /rooms/{id}/windows`.
+- **The "Control Strength" select** becomes a **range** select (−40…−100 dBm). **Deploy Config** sends it, with the interval, to `PUT /config/{device}`.
+- **The BLE packet log** shows the board's latest anonymised devices, marked as in range or filtered by the board's threshold.
+- **Time-warp** and **Reset** still work. Time-warp switches the room to simulation, and Reset switches it back.
+
+**Settings in `localStorage`:**
+- `hackaburger_api_key`: you're asked for it once. Leave it empty to use the offline simulation.
+- `hackaburger_api_base`: defaults to `https://hackaburger.cch-uk.tech/ingest`.
+- `hackaburger_weekday`: set by the badge's "use weekday pattern" link, which shows a Wednesday pattern on weekends.
+
+**If you rename one of the hooked functions in `index.html`,** update `backend.js` too. Without the hook, that feature quietly falls back to simulation.
+
+## Endpoint ↔ frontend map
+
+What each part of the page uses (`backend.js` already does this):
 
 | Frontend now | Replace with |
 |---|---|

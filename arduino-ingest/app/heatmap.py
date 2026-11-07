@@ -5,8 +5,9 @@ messages for one moment share a `ts`. For each `ts` the server builds a snapshot
 boards have sent, or WAIT_S after the first one did:
 
 1. join the boards' RSSI per device id and add each board's offset;
-2. in-room filter: heard by >= min_boards, weakest signal >= edge_dbm, and present for
-   presence_s (first failing check is the device's `reason`);
+2. in-room filter: not an obvious non-person (kind in exclude_kinds, or the same id seen
+   continuously for stationary_h hours), heard by >= min_boards, weakest signal >= edge_dbm,
+   and present for presence_s (the first failing check is the device's `reason`);
 3. position = signal-weighted centre of the board positions;
 4. people_estimate = in-room devices / devices_per_person; heatmap = a Gaussian per device
    (scaled to people), smoothed per cell over time.
@@ -45,21 +46,27 @@ OFFSETS_EVERY_S, OFFSETS_WINDOW_S, OFFSETS_MIN_DEVICES = 60, 600, 30
 DEBUG_KEEP_S = 86400  # per-device rows (and board device lists) are kept for at most 24 h
 CORNERS = ("top_left", "top_right", "bottom_right", "bottom_left")
 MODES = {"live": {"send_every_s": 0, "interval_s": 10, "window_s": 20}, "dev": {"send_every_s": 300}}
+# Device categories the boards send (docs/server-api.md), most specific first; the generic ones last
+KINDS = ("earbuds", "tracker", "beacon", "fixed", "apple_device", "phone", "computer", "wearable",
+         "brand_other", "unknown")
+NOT_PEOPLE = ["earbuds", "tracker", "beacon", "fixed"]
 
 DEFAULT_CONFIG = {
     "room": {"width_m": 8.0, "length_m": 6.0, "board_inset_m": 0.5},
     "boards": {f"uno-q-{i + 1}": {"corner": c} for i, c in enumerate(CORNERS)},
-    "filter": {"edge_mode": "auto", "edge_dbm": -85.0, "edge_margin_db": 4.0, "min_boards": 3, "presence_s": 30},
+    "filter": {"exclude_kinds": NOT_PEOPLE, "stationary_h": 2.0, "edge_mode": "auto", "edge_dbm": -85.0,
+               "edge_margin_db": 4.0, "min_boards": 3, "presence_s": 30},
     "offsets_mode": "auto",
     "offsets_db": {f"uno-q-{i + 1}": 0.0 for i in range(4)},
     "position": {"weight_k": 2.0},
     "heatmap": {"cell_m": 0.5, "sigma_m": 1.0, "smoothing_s": 60},
-    "people": {"devices_per_person": 1.4},
+    "people": {"devices_per_person": 1.2},
 }
 # section -> field -> (kind, min, max)
 FIELDS = {
     "room": {"width_m": (float, 1, 100), "length_m": (float, 1, 100), "board_inset_m": (float, 0, 3)},
-    "filter": {"edge_mode": ("mode",), "edge_dbm": (float, -100, -40), "edge_margin_db": (float, 0, 15),
+    "filter": {"exclude_kinds": ("kinds",), "stationary_h": (float, 0, 48),
+               "edge_mode": ("mode",), "edge_dbm": (float, -100, -40), "edge_margin_db": (float, 0, 15),
                "min_boards": (int, 2, 4), "presence_s": (int, 0, 600)},
     "position": {"weight_k": (float, 0.5, 5)},
     "heatmap": {"cell_m": (float, 0.25, 2), "sigma_m": (float, 0.25, 5), "smoothing_s": (int, 0, 600)},
@@ -106,6 +113,16 @@ def migrate(conn: sqlite3.Connection):
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_heatmap_devices_id ON heatmap_devices (id, ts)")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS heatmap_tracks (
+            id TEXT PRIMARY KEY,
+            first_ts REAL NOT NULL,  -- start of the current continuous run of snapshots with this id
+            last_ts REAL NOT NULL
+        )"""
+    )
+    for table, col in (("heatmap_devices", "kind TEXT"), ("heatmap_snapshots", "kinds TEXT")):
+        if col.split()[0] not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
 
 
 def merged(base: dict, patch: dict) -> dict:
@@ -212,6 +229,10 @@ def validate_patch(patch: Any, current: dict) -> dict:
 
 
 def check_value(name: str, v: Any, spec: tuple):
+    if spec[0] == "kinds":
+        if not isinstance(v, list) or any(k not in KINDS for k in v):
+            raise HTTPException(422, f"{name} must be a list of {list(KINDS)}")
+        return sorted(set(v), key=KINDS.index)
     if spec[0] == "mode":
         if v not in ("auto", "manual"):
             raise HTTPException(422, f"{name} must be 'auto' or 'manual'")
@@ -227,15 +248,35 @@ def check_value(name: str, v: Any, spec: tuple):
 # ---------------------------------------------------------------- snapshots
 
 def board_messages(conn: sqlite3.Connection, boards: list[str], ts: float) -> dict[str, dict]:
-    """The latest message per board for this ts: {board: {id: rssi}}."""
+    """The latest message per board for this ts: {board: {id: (rssi, kind)}}."""
     marks = ",".join("?" * len(boards))
     out = {}
     for r in conn.execute(f"SELECT device, data FROM readings WHERE measured_at = ? AND device IN ({marks}) "
                           "ORDER BY id", (ts, *boards)):
         devices = json.loads(r["data"]).get("devices") or []
-        out[r["device"]] = {d["id"]: float(d["rssi"]) for d in devices
+        out[r["device"]] = {d["id"]: (float(d["rssi"]), d.get("kind") if d.get("kind") in KINDS else "unknown")
+                            for d in devices
                             if isinstance(d, dict) and isinstance(d.get("id"), str) and is_number(d.get("rssi"))}
     return out
+
+
+def device_kind(kinds: list[str]) -> str:
+    """Boards can disagree: the most specific category wins (generic brand_other/unknown last)."""
+    return min(kinds, key=KINDS.index) if kinds else "unknown"
+
+
+def update_tracks(conn: sqlite3.Connection, ids: set[str], ts: float, max_gap_s: float) -> dict[str, float]:
+    """Continuous presence per id: {id: first_ts of its current run}. A gap > max_gap_s starts a new run."""
+    first = {}
+    for dev_id in ids:
+        row = conn.execute("SELECT first_ts, last_ts FROM heatmap_tracks WHERE id = ?", (dev_id,)).fetchone()
+        if row and ts - row["last_ts"] <= max_gap_s and ts >= row["first_ts"]:
+            first[dev_id] = row["first_ts"]
+            conn.execute("UPDATE heatmap_tracks SET last_ts = MAX(last_ts, ?) WHERE id = ?", (ts, dev_id))
+        else:
+            first[dev_id] = ts
+            conn.execute("INSERT OR REPLACE INTO heatmap_tracks VALUES (?, ?, ?)", (dev_id, ts, ts))
+    return first
 
 
 def gaussian_grid(cfg: dict, points: list[tuple[float, float]]) -> np.ndarray:
@@ -260,9 +301,11 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
     heard = board_messages(conn, boards, ts)
     offsets, f = cfg["offsets_db"], cfg["filter"]
     edge, min_boards, presence_s = f["edge_dbm"], f["min_boards"], f["presence_s"]
+    exclude, stationary_s = set(f["exclude_kinds"]), f["stationary_h"] * 3600
     k = cfg["position"]["weight_k"]
     w, l = cfg["room"]["width_m"], cfg["room"]["length_m"]
-    interval = get_config(conn, boards[0])["interval_s"]
+    bc = get_config(conn, boards[0])
+    interval = bc["interval_s"]
     needed = math.ceil(presence_s / interval) if presence_s else 0
     history: dict[str, list[int]] = {}
     if presence_s:
@@ -271,10 +314,15 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
             history.setdefault(r["id"], []).append(r["pass_edge"])
 
     ids = set().union(*heard.values()) if heard else set()
-    rows, in_room_xy = [], []
-    funnel = {"heard": len(ids), "enough_boards": 0, "inside_edge": 0, "present": 0}
+    # A missed snapshot or two doesn't break a run; a longer gap (e.g. a board offline) does
+    run_start = update_tracks(conn, ids, ts, 3 * (bc["send_every_s"] or interval) + WAIT_S)
+    rows, in_room_xy, kinds_in_room = [], [], {}
+    funnel = {"heard": len(ids), "plausible_people": 0, "enough_boards": 0, "inside_edge": 0, "present": 0}
     for dev_id in ids:
-        rssi = {b: heard.get(b, {}).get(dev_id) for b in boards}
+        seen = {b: heard[b][dev_id] for b in boards if dev_id in heard.get(b, {})}
+        rssi = {b: seen[b][0] if b in seen else None for b in boards}
+        board_kinds = [v[1] for v in seen.values()]
+        kind = device_kind(board_kinds)
         adj = {b: v + offsets.get(b, 0.0) for b, v in rssi.items() if v is not None}
         weakest = min(adj.values())
         x = y = None
@@ -284,9 +332,15 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
             x = min(w, max(0.0, sum(wts[b] * pos[b][0] for b in wts) / total))
             y = min(l, max(0.0, sum(wts[b] * pos[b][1] for b in wts) / total))
         reason = None
-        if len(adj) < min_boards:
+        if any(k in exclude for k in board_kinds):
+            reason = "not_a_person"
+        elif stationary_s and ts - run_start[dev_id] >= stationary_s:
+            reason = "stationary"
+        elif len(adj) < min_boards:
+            funnel["plausible_people"] += 1
             reason = "too_few_boards"
         else:
+            funnel["plausible_people"] += 1
             funnel["enough_boards"] += 1
             if weakest < edge:
                 reason = "outside_edge"
@@ -295,14 +349,16 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
                 past = history.get(dev_id, [])
                 if presence_s and (not all(past) or len(past) + 1 < needed):
                     reason = "too_brief"
-        pass_edge = reason not in ("too_few_boards", "outside_edge")
+        pass_edge = reason in (None, "too_brief")
         if reason is None:
             funnel["present"] += 1
             in_room_xy.append((x, y))
+            kinds_in_room[kind] = kinds_in_room.get(kind, 0) + 1
         rows.append((ts, dev_id, json.dumps(rssi), len(adj), round(weakest, 1),
                      None if x is None else round(x, 2), None if y is None else round(y, 2),
-                     int(pass_edge), "in_room" if reason is None else "rejected", reason))
-    conn.executemany("INSERT OR REPLACE INTO heatmap_devices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+                     int(pass_edge), "in_room" if reason is None else "rejected", reason, kind))
+    conn.executemany("INSERT OR REPLACE INTO heatmap_devices (ts, id, rssi, boards_heard, weakest_dbm, x, y, "
+                     "pass_edge, status, reason, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
     dpp = cfg["people"]["devices_per_person"]
     grid = gaussian_grid(cfg, in_room_xy)
@@ -315,11 +371,15 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
         if old.shape == grid.shape:
             smoothed = alpha * grid + (1 - alpha) * old
     board_stats = {b: {"message": b in heard, "heard": len(heard.get(b, {}))} for b in boards}
-    used = {"edge_dbm": edge, "min_boards": min_boards, "presence_s": presence_s, "offsets_db": offsets}
-    conn.execute("INSERT OR REPLACE INTO heatmap_snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    used = {"edge_dbm": edge, "min_boards": min_boards, "presence_s": presence_s, "offsets_db": offsets,
+            "exclude_kinds": sorted(exclude, key=KINDS.index), "stationary_h": f["stationary_h"]}
+    kinds_sorted = dict(sorted(kinds_in_room.items(), key=lambda kv: -kv[1]))
+    conn.execute("INSERT OR REPLACE INTO heatmap_snapshots (ts, computed_at, people_estimate, devices_in_room, "
+                 "devices_heard, funnel, boards, filter, grid, grid_raw_sum, kinds) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                  (ts, now, len(in_room_xy) / dpp, len(in_room_xy), len(ids), json.dumps(funnel),
                   json.dumps(board_stats), json.dumps(used), json.dumps(np.round(smoothed, 4).tolist()),
-                  float(grid.sum())))
+                  float(grid.sum()), json.dumps(kinds_sorted)))
 
 
 def ready_snapshots(conn: sqlite3.Connection, boards: list[str], now: float) -> list[float]:
@@ -372,6 +432,7 @@ def tick(now: float | None = None):
 def prune(conn: sqlite3.Connection, now: float):
     cutoff = now - DEBUG_KEEP_S
     conn.execute("DELETE FROM heatmap_devices WHERE ts < ?", (cutoff,))
+    conn.execute("DELETE FROM heatmap_tracks WHERE last_ts < ?", (cutoff,))
     # Board messages keep their anonymous RSSI list (readings.rssis) but lose the device ids
     conn.execute("UPDATE readings SET data = json_remove(data, '$.devices') "
                  "WHERE measured_at < ? AND json_extract(data, '$.devices') IS NOT NULL", (cutoff,))
@@ -536,7 +597,8 @@ def latest():
     if not snap:
         warnings.append("no snapshot yet: waiting for board data")
         return {"ts": None, "age_s": None, "mode": mode, "people_estimate": None, "people_smoothed": None,
-                "devices_in_room": None, "devices_heard": None, "funnel": None, "boards": boards, "room": room,
+                "devices_in_room": None, "devices_heard": None, "funnel": None, "kinds_in_room": None,
+                "boards": boards, "room": room,
                 "calibration": calibration, "heatmap": None, "warnings": warnings}
     grid = json.loads(snap["grid"])
     smoothed = statistics.median(recent) if recent else snap["people_estimate"]
@@ -549,6 +611,7 @@ def latest():
         "devices_in_room": snap["devices_in_room"],
         "devices_heard": snap["devices_heard"],
         "funnel": json.loads(snap["funnel"]),
+        "kinds_in_room": json.loads(snap["kinds"]) if snap["kinds"] else {},
         "boards": boards,
         "room": room,
         "calibration": calibration,
@@ -576,10 +639,12 @@ def debug(ts: str | None = Query(default=None, description="a snapshot ts (defau
             (snap["ts"],)).fetchall()
     used = json.loads(snap["filter"])
     return {"ts": iso(snap["ts"]),
-            "filter": {k: used[k] for k in ("edge_dbm", "min_boards", "presence_s")},
+            "filter": {k: used[k] for k in ("exclude_kinds", "stationary_h", "edge_dbm", "min_boards", "presence_s")
+                       if k in used},
             "offsets_db": used["offsets_db"],
             "devices": [{"id": r["id"], "rssi": json.loads(r["rssi"]), "weakest_dbm": r["weakest_dbm"],
-                         "boards_heard": r["boards_heard"], "x": r["x"], "y": r["y"], "status": r["status"],
+                         "boards_heard": r["boards_heard"], "x": r["x"], "y": r["y"], "kind": r["kind"] or "unknown",
+                         "status": r["status"],
                          "reason": r["reason"]} for r in rows]}
 
 

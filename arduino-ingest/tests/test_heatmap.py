@@ -35,16 +35,19 @@ def new_ts() -> float:
     return NOW + next(_slot) * 10
 
 
-def gap():
-    """Skip 2 minutes, so 60-second windows (headcount, history) only see this test's snapshots."""
-    for _ in range(12):
+def gap(slots: int = 12):
+    """Skip time (default 2 minutes), so time windows only see this test's snapshots."""
+    for _ in range(slots):
         next(_slot)
 
 
-def send(client, ts, devices_by_board: dict[str, dict[str, float]], boards=BOARDS, version=None):
-    """devices_by_board: {board: {device id: rssi}} -> one POST per board for this ts."""
+def send(client, ts, devices_by_board: dict[str, dict], boards=BOARDS, version=None):
+    """devices_by_board: {board: {device id: rssi or (rssi, kind)}} -> one POST per board for this ts."""
+    def item(i, v):
+        rssi, kind = v if isinstance(v, tuple) else (v, None)
+        return {"id": i, "rssi": rssi, "n": 2, **({"kind": kind, "static": False} if kind else {})}
     for b in boards:
-        data = {"devices": [{"id": i, "rssi": r, "n": 2} for i, r in devices_by_board.get(b, {}).items()]}
+        data = {"devices": [item(i, v) for i, v in devices_by_board.get(b, {}).items()]}
         if version is not None:
             data["config_version"] = version
         assert client.post("/data", json={"device": b, "ts": iso(ts), "data": data}, headers=KEY).status_code == 201
@@ -55,12 +58,13 @@ def device(rssis: list[float | None]) -> dict[str, float]:
     return {b: r for b, r in zip(BOARDS, rssis) if r is not None}
 
 
-def snapshot(client, ts, devices: dict[str, list[float | None]], boards=BOARDS):
-    """Send one ts with these devices ({id: [rssi per board]}) and return its debug view."""
+def snapshot(client, ts, devices: dict, boards=BOARDS):
+    """Send one ts with these devices ({id: [rssi per board]} or {id: ([rssi per board], kind)}); return debug."""
     by_board = {b: {} for b in BOARDS}
-    for dev_id, rssis in devices.items():
+    for dev_id, spec in devices.items():
+        rssis, kind = spec if isinstance(spec, tuple) else (spec, None)
         for b, r in device(rssis).items():
-            by_board[b][dev_id] = r
+            by_board[b][dev_id] = (r, kind) if kind else r
     send(client, ts, by_board, boards)
     heatmap.tick(time.time() + heatmap.WAIT_S + 1)
     return client.get(f"/heatmap/debug?ts={iso(ts)}", headers=KEY).json()
@@ -96,7 +100,9 @@ def test_outside_edge_and_in_room(client):
     assert (st, reason) == ("in_room", None)
     assert math.dist((d["x"], d["y"]), (0.5, 0.5)) < math.dist((d["x"], d["y"]), (7.5, 5.5))
     assert [x["status"] for x in dbg["devices"]][0] == "in_room"  # in-room first
-    assert dbg["filter"] == {"edge_dbm": -85, "min_boards": 3, "presence_s": 0}
+    assert dbg["filter"] == {"exclude_kinds": ["earbuds", "tracker", "beacon", "fixed"], "stationary_h": 2.0,
+                             "edge_dbm": -85, "min_boards": 3, "presence_s": 0}
+    assert status(dbg, "inside")[2]["kind"] == "unknown"  # no kind sent
 
 
 def test_edge_change_applies_on_next_snapshot(client):
@@ -136,7 +142,9 @@ def test_people_estimate_grid_and_headcount(client):
     assert abs(total - 10) / 10 < 0.1, total
     h = latest["heatmap"]
     assert (h["cols"], h["rows"]) == (16, 12) and h["max_value"] == max(map(max, h["values"]))
-    assert latest["funnel"] == {"heard": 14, "enough_boards": 14, "inside_edge": 14, "present": 14}
+    assert latest["funnel"] == {"heard": 14, "plausible_people": 14, "enough_boards": 14, "inside_edge": 14,
+                                "present": 14}
+    assert latest["kinds_in_room"] == {"unknown": 14}
 
     r = client.post("/heatmap/calibrate/headcount", json={"people": 10}, headers=KEY).json()
     assert r["devices_per_person"] == 1.4
@@ -145,6 +153,59 @@ def test_people_estimate_grid_and_headcount(client):
     assert client.get("/heatmap/config", headers=KEY).json()["people"]["devices_per_person"] == 2.0
     assert client.post("/heatmap/calibrate/headcount", json={"people": 0}, headers=KEY).status_code == 422
     client.put("/heatmap/config", json={"people": {"devices_per_person": 1.4}}, headers=KEY)
+
+
+def test_default_devices_per_person_is_1_2():
+    assert heatmap.DEFAULT_CONFIG["people"]["devices_per_person"] == 1.2
+
+
+def test_obvious_non_people_are_excluded(client):
+    client.put("/heatmap/config", json={"filter": {"edge_dbm": -90}}, headers=KEY)
+    strong = [-55, -63, -70, -66]
+    devs = {"buds": (strong, "earbuds"), "tag": (strong, "tracker"), "phone": (strong, "apple_device"),
+            "laptop": (strong, "computer")}
+    dbg = snapshot(client, new_ts(), devs)
+    assert status(dbg, "buds")[:2] == ("rejected", "not_a_person") and status(dbg, "buds")[2]["kind"] == "earbuds"
+    assert status(dbg, "tag")[1] == "not_a_person"
+    assert status(dbg, "phone")[0] == "in_room" and status(dbg, "laptop")[0] == "in_room"
+    latest = client.get("/heatmap/latest", headers=KEY).json()
+    assert latest["funnel"]["heard"] == 4 and latest["funnel"]["plausible_people"] == 2
+    assert latest["kinds_in_room"] == {"apple_device": 1, "computer": 1}
+
+    # Boards disagree: one board thinks it's earbuds -> excluded; the most specific kind is reported
+    by_board = {b: {"mixed": (-60, "earbuds" if b == "uno-q-3" else "unknown")} for b in BOARDS}
+    ts = new_ts()
+    send(client, ts, by_board)
+    dbg = client.get(f"/heatmap/debug?ts={iso(ts)}", headers=KEY).json()
+    assert status(dbg, "mixed")[1] == "not_a_person" and status(dbg, "mixed")[2]["kind"] == "earbuds"
+
+    client.put("/heatmap/config", json={"filter": {"exclude_kinds": []}}, headers=KEY)
+    try:
+        dbg = snapshot(client, new_ts(), devs)
+        assert all(status(dbg, i)[0] == "in_room" for i in devs)
+    finally:
+        client.put("/heatmap/config", json={"filter": {"exclude_kinds": ["earbuds", "tracker", "beacon", "fixed"]}},
+                   headers=KEY)
+    assert client.put("/heatmap/config", json={"filter": {"exclude_kinds": ["toaster"]}}, headers=KEY).status_code == 422
+
+
+def test_stationary_devices_are_excluded(client):
+    # 0.01 h = 36 s: an id seen in every snapshot for longer than that is a fixed device
+    client.put("/heatmap/config", json={"filter": {"stationary_h": 0.01, "edge_dbm": -90}}, headers=KEY)
+    try:
+        t0 = new_ts()
+        for i in range(6):
+            dbg = snapshot(client, t0 + i * 10, {"tv": [-60, -65, -70, -66], f"phone{i}": [-60, -65, -70, -66]})
+            next(_slot)
+            st = status(dbg, "tv")
+            assert st[1] == ("stationary" if i * 10 >= 36 else None), (i, st)
+            assert status(dbg, f"phone{i}")[0] == "in_room"  # new ids (rotating addresses) still count
+        # After an absence longer than 3 send periods (+15 s) the run starts again
+        gap(100)
+        dbg = snapshot(client, new_ts(), {"tv": [-60, -65, -70, -66]})
+        assert status(dbg, "tv")[0] == "in_room"
+    finally:
+        client.put("/heatmap/config", json={"filter": {"stationary_h": 2}}, headers=KEY)
 
 
 def test_one_board_offline(client):
@@ -233,6 +294,7 @@ def test_history_and_live_room_people(client):
 def test_auto_offsets(client):
     client.put("/heatmap/config", json={"filter": {"edge_dbm": -95}, "offsets_mode": "auto"}, headers=KEY)
     heatmap._last_offsets = 0
+    gap(70)  # offsets use the last 10 minutes of snapshots: only this test's devices
     # Board 2 reads 5 dB low on every device all four boards hear
     snapshot(client, new_ts(), {f"o{i}": [-65, -70, -65, -65] for i in range(40)})
     heatmap._last_offsets = 0
@@ -262,11 +324,14 @@ def test_privacy_prune(client):
     from app.core import db
     old = time.time() - 2 * 86400
     with db() as conn:
-        conn.execute("INSERT INTO heatmap_devices VALUES (?, 'old-id', '{}', 4, -60, 1, 1, 1, 'in_room', NULL)", (old,))
+        conn.execute("INSERT INTO heatmap_devices VALUES (?, 'old-id', '{}', 4, -60, 1, 1, 1, 'in_room', NULL, NULL)",
+                     (old,))
+        conn.execute("INSERT INTO heatmap_tracks VALUES ('old-id', ?, ?)", (old, old))
         conn.execute("INSERT INTO readings (device, device_ts, received_at, data, measured_at, rssis) "
                      "VALUES ('uno-q-9', NULL, ?, ?, ?, '[-60]')", (iso(old), '{"devices": [{"id": "x", "rssi": -60, "n": 1}]}', old))
         heatmap.prune(conn, time.time())
         assert conn.execute("SELECT COUNT(*) FROM heatmap_devices WHERE id = 'old-id'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM heatmap_tracks WHERE id = 'old-id'").fetchone()[0] == 0
         row = conn.execute("SELECT data, rssis FROM readings WHERE device = 'uno-q-9'").fetchone()
         assert row["data"] == "{}" and row["rssis"] == "[-60]"
 

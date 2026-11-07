@@ -156,6 +156,16 @@ This is built to [`heatmap-backend-guide.md`](heatmap-backend-guide.md); all its
 | `PUT /heatmap/boards` | The same board settings for all heatmap boards, e.g. `{"threshold_dbm": -60}` (LED range) |
 | `POST /heatmap/calibrate/headcount` | `{"people": n}`, counted in the room now: sets `devices_per_person` |
 
+**Device types** (the board's `kind` per device, see `server-api.md`):
+- Step 0 of the in-room filter rejects `exclude_kinds` (default: earbuds, trackers, beacons, fixed devices) as `not_a_person`.
+  - If **any** board reports an excluded kind, the device is excluded.
+  - The reported `kind` is the most specific one the boards gave; `brand_other` and `unknown` count as least specific.
+- An id seen in every snapshot for `stationary_h` hours (default 2) is rejected as `stationary`.
+  - A gap of more than 3 send periods + 15 s starts the count again.
+  - The continuous-presence tracking (`heatmap_tracks`) is deleted after 24 h, like the other per-device data.
+- `/latest` includes `funnel.plausible_people` and `kinds_in_room`, and `/debug` includes each device's `kind`.
+- `devices_per_person` defaults to 1.2.
+
 **Choices beyond the guide:**
 - **Calibrated values set by hand switch to manual.** `PUT {"filter": {"edge_dbm": -95}}` switches `edge_mode` to `manual`, and setting `offsets_db` switches `offsets_mode` to `manual`. Otherwise the auto calibration would immediately overwrite the value. Send `"edge_mode": "auto"` to go back.
 - **Board timing is enforced.** `PUT /config/{device}` with an `interval_s` or `window_s` that differs from the other heatmap boards returns `422`; change them together with `PUT /heatmap/boards`.

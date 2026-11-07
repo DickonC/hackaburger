@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run the API tests in a throwaway container (never touches data/).
+cd "$(dirname "$(readlink -f "$0")")"
+docker build -q -f Dockerfile -t hackaburger-ingest-test .. >/dev/null &&
+exec docker run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" hackaburger-ingest-test \
+  sh -c "pip install -q --disable-pip-version-check --root-user-action=ignore pytest==8.3.4 httpx==0.28.1 && python -m pytest -q -p no:cacheprovider tests $*"

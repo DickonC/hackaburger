@@ -1,0 +1,7 @@
+fastapi==0.115.6
+uvicorn==0.34.0
+# occupancy_forecaster (rolling_24h / occupancy_core)
+numpy==2.5.4
+pandas==3.1.1
+scikit-learn==1.9.1
+joblib==1.5.3

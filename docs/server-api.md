@@ -3,7 +3,7 @@
 How the Arduino UNO Q boards send their Bluetooth scans to the server, and how the server sends settings back.
 Built on the existing endpoint `https://hackaburger.cch-uk.tech/ingest/data`.
 
-**Status:** proposal. Sending `{"people": n}` already works. The `config` reply and the `/ingest/config` endpoints below still need to be added on the server.
+**Status:** live on the server (`arduino-ingest/`). Everything below is implemented, including the `config` reply, `/ingest/config` and the `/ingest/occupancy/*` read endpoints. The server also replies with `"dropped": k`, the number of invalid `devices` items it ignored.
 
 ## The rule
 
@@ -139,27 +139,45 @@ In a busy venue the board hears 300–500 devices, which makes a message of roug
 
 These endpoints are for the webapp, not the board. They use the same `X-API-Key` header.
 
-### Latest count: `GET /ingest/data?device=uno-q-1&limit=1` (exists already)
+### Latest count: `GET /ingest/occupancy/latest?device=uno-q-1`
+
+The server's own count, recalculated from `devices` with the board's config at the time of receipt:
 
 ```json
-[
-  {
-    "id": 2,
-    "device": "uno-q-1",
-    "ts": "2026-11-07T18:20:05Z",
-    "received_at": "2026-11-07T18:20:05.412Z",
-    "data": { "people": 29, "devices_in_range": 41, "...": "..." }
-  }
-]
+{
+  "device": "uno-q-1", "ts": "2026-11-07T18:20:05Z", "online": true,
+  "devices_in_range": 41, "people": 29, "people_smoothed": 28, "heard_total": 212,
+  "source": "server", "board_people": 29,
+  "config": { "config_version": 3, "threshold_dbm": -75, "...": "..." }
+}
 ```
 
-A board counts as **offline** if its last `received_at` is older than `3 × interval_s`.
+- `people_smoothed` is the median over the last 30 s of measurements, or the same as `people` when `window_s` ≤ 10 (demo mode).
+- `source` is `"server"` when counted from `devices`, or `"board"` for messages without `devices`. Those use `devices_in_range × people_factor`, otherwise `people`.
+- `board_people` is the board's own `people` value, for comparison.
+- **Online** means the last message arrived within `3 × interval_s + 5 s`.
+- **Rounding** is half up (2.5 → 3).
+- Returns `404` if the board has never sent anything.
 
-### Read settings: `GET /ingest/config/uno-q-1` (new)
+### Time series: `GET /ingest/occupancy/history?device=uno-q-1&from=…&to=…&step_s=60[&threshold_dbm=-65]`
+
+- `from` and `to` are ISO times. The defaults are the last hour up to now.
+- Messages are grouped by their `ts` into `step_s` buckets. Each bucket is the mean of the unrounded people estimate, to 1 decimal place. Empty buckets are `null`.
+- `threshold_dbm` recounts every message at that range. Messages without `devices` are left out.
+- At most 10 000 points per request.
+
+```json
+{ "device": "uno-q-1", "step_s": 60, "threshold_dbm": null,
+  "points": [ { "ts": "2026-11-07T17:00:00Z", "people": 24.3 }, { "ts": "2026-11-07T17:01:00Z", "people": null } ] }
+```
+
+The raw stored messages are still available at `GET /ingest/data?device=uno-q-1&limit=1`.
+
+### Read settings: `GET /ingest/config/uno-q-1`
 
 Returns the same `config` object the board gets.
 
-### Change settings: `PUT /ingest/config/uno-q-1` (new)
+### Change settings: `PUT /ingest/config/uno-q-1`
 
 Send only the fields to change:
 
@@ -167,7 +185,8 @@ Send only the fields to change:
 { "threshold_dbm": -40, "window_s": 6, "interval_s": 1 }
 ```
 
-The server validates them against the table above (`422` if invalid), increases `config_version`, and returns the full new `config`.
+The server validates them against the table above, increases `config_version`, and returns the full new `config`. `{"preset": "room" | "demo" | "venue"}` applies a preset.
+It returns `422` for unknown fields, wrong types, out-of-range values or `config_version`, and doesn't clamp.
 The board picks the change up on its next POST, so within one `interval_s`.
 
 ---
@@ -187,8 +206,8 @@ curl -X POST https://hackaburger.cch-uk.tech/ingest/data \
   -d '{"device":"uno-q-1","ts":"2026-11-07T18:20:05Z","data":{"people":1,"devices_in_range":1,"heard_total":3,"config_version":1,"settings":{"threshold_dbm":-75,"window_s":30,"people_factor":0.7},"devices":[{"id":"a3f9c2e1b7d04e12","rssi":-52,"n":9}]}}'
 ```
 
-## Open questions for the team
+## Answered questions
 
-- Does the server accept nested lists in `data`, and what's its size limit? This affects `send_devices`.
-- Who builds `/ingest/config` and the `config` reply?
-- Should the webapp and CO₂ model use `people` (board's estimate) or recalculate from `devices` with their own factor?
+- **Nested lists and size limit:** nested JSON is fine. The limit is **256 KB per request**, which is 10× a 500-device message. Above that, nginx returns `413`.
+- **Who builds `/ingest/config` and the `config` reply:** done, in `arduino-ingest/app/main.py`.
+- **`people` or a recount:** use the server's numbers from `/ingest/occupancy/*`. They're counted from `devices`, so a range change in `history?threshold_dbm=` also applies to old data. The board's own value is kept as `board_people`.

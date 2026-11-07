@@ -10,7 +10,8 @@
    - "Deploy Config" sends the range threshold + interval to the board
    - The BLE packet log shows the board's real (anonymised) devices
 
-   Settings (localStorage): hackaburger_api_key, hackaburger_api_base,
+   API key, without a prompt: open the site once as ?key=<API key> (saved in this browser, then
+   removed from the address bar). Never commit the key. Other settings (localStorage): hackaburger_api_base,
    hackaburger_weekday ("wed" to show a weekday pattern on weekends).
    ===================================================================== */
 (function () {
@@ -44,21 +45,35 @@
 
   // ------------------------------------------------------------ API
 
-  function apiKey(reset) {
-    if (reset) localStorage.removeItem('hackaburger_api_key');
-    let key = localStorage.getItem('hackaburger_api_key');
-    if (!key) {
-      key = prompt('Hackaburger API key (leave empty to use the offline simulation):');
-      if (key) localStorage.setItem('hackaburger_api_key', key.trim());
+  // No prompt. The key comes from (1) a one-time link ?key=... (saved in this browser, then removed
+  // from the address bar), (2) the key saved earlier in this browser, or (3) a config.json next to
+  // the page if the server provides one. Without a key the page runs the offline simulation.
+  let API_KEY = null;
+
+  async function loadApiKey() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('key')) {
+      localStorage.setItem('hackaburger_api_key', params.get('key').trim());
+      params.delete('key');
+      const rest = params.toString();
+      history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
     }
-    return key ? key.trim() : null;
+    const saved = localStorage.getItem('hackaburger_api_key');
+    if (saved) return saved.trim();
+    try {
+      const res = await fetch('config.json', { cache: 'no-store' });
+      if (res.ok) {
+        const cfg = await res.json();
+        if (cfg && cfg.apiKey) return String(cfg.apiKey).trim();
+      }
+    } catch (e) { /* opened from a file or another host */ }
+    return null;
   }
 
   async function api(path, opts = {}) {
-    const key = localStorage.getItem('hackaburger_api_key');
     const res = await fetch(API_BASE + path, {
       ...opts,
-      headers: { 'X-API-Key': key || '', 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      headers: { 'X-API-Key': API_KEY || '', 'Content-Type': 'application/json', ...(opts.headers || {}) },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
     if (!res.ok) {
@@ -293,11 +308,8 @@
       live.mode = live.forceSim ? 'sim' : hasBoard ? 'live' : 'sim';
       if (live.mode !== 'sim') applyLiveState();
     } catch (e) {
-      if (e.status === 401) {
-        live.enabled = false;
-        if (apiKey(true)) return start();
-      }
-      live.error = e.message;
+      if (e.status === 401) live.enabled = false;
+      live.error = e.status === 401 ? 'API key rejected' : e.message;
       live.mode = 'sim';
     }
     renderBadge();
@@ -605,7 +617,7 @@
           else localStorage.setItem('hackaburger_weekday', 'wed');
           poll();
         }
-        if (action === 'connect') { apiKey(true) && start(); }
+        if (action === 'connect') { API_KEY = null; start(); }
       });
     }
     const STATE = getState();
@@ -665,7 +677,8 @@
   // ------------------------------------------------------------ start
 
   async function start() {
-    if (!apiKey(false)) { live.enabled = false; renderBadge(); return; }
+    if (!API_KEY) API_KEY = await loadApiKey();
+    if (!API_KEY) { live.enabled = false; live.error = 'no API key'; renderBadge(); return; }
     try {
       await loadRooms();
       live.enabled = true;
@@ -689,8 +702,7 @@
       poll();
     } catch (e) {
       live.enabled = false;
-      live.error = e.message;
-      if (e.status === 401 && apiKey(true)) return start();
+      live.error = e.status === 401 ? 'API key rejected' : e.message;
       renderBadge();
     }
   }

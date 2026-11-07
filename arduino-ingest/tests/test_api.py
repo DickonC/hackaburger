@@ -3,14 +3,9 @@
 Run: ./run-tests   (uses a throwaway database inside a container)
 """
 
-import os
 import random
-import tempfile
 import time
 from datetime import datetime, timedelta, timezone
-
-os.environ["API_KEY"] = "test-key"
-os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 
 import pytest
 from fastapi.testclient import TestClient

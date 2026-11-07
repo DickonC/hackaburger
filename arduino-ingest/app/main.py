@@ -8,10 +8,7 @@ All paths here are served publicly under /ingest/ (nginx strips the prefix).
 """
 
 import json
-import math
 import os
-import re
-import secrets
 import sqlite3
 import statistics
 import time
@@ -19,14 +16,16 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-DB_PATH = os.environ.get("DB_PATH", "/data/ingest.db")
-API_KEY = os.environ.get("API_KEY", "")
+from app import rooms
+from app.core import (API_KEY, bucket_people, check_device, count, db, is_number, iso, parse_time,
+                      require_key, round_half_up, time_range)
+
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", 256 * 1024))  # matches nginx client_max_body_size
 MAX_DEVICES = 5000
-DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 DEFAULT_CONFIG = {
     "config_version": 1,
@@ -68,36 +67,6 @@ NEW_COLUMNS = {
 }
 
 
-def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def parse_time(s: str | None) -> float | None:
-    if not s:
-        return None
-    try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.timestamp()
-
-
-def iso(t: float) -> str:
-    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def round_half_up(x: float | None) -> int | None:
-    return None if x is None else math.floor(x + 0.5)
-
-
-def is_number(v: Any) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
-
-
 def clean_devices(devices: list) -> tuple[list[float], int]:
     """Return the RSSIs of valid device items and how many items were dropped."""
     rssis = []
@@ -114,11 +83,6 @@ def clean_devices(devices: list) -> tuple[list[float], int]:
         ):
             rssis.append(float(d["rssi"]))
     return rssis, len(devices) - len(rssis)
-
-
-def count(rssis: list[float], threshold: float, factor: float) -> tuple[int, float]:
-    in_range = sum(1 for r in rssis if r >= threshold)
-    return in_range, round(in_range * factor, 6)
 
 
 def compute(data: dict, rssis: list[float] | None, threshold: int, factor: float) -> dict:
@@ -191,10 +155,14 @@ async def lifespan(app: FastAPI):
     with db() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         migrate(conn)
+        rooms.migrate(conn)
     yield
 
 
 app = FastAPI(title="hackaburger arduino-ingest", lifespan=lifespan)
+app.include_router(rooms.router)
+# The frontend may be opened from anywhere (file://, localhost); every call still needs X-API-Key
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 @app.middleware("http")
@@ -203,17 +171,6 @@ async def limit_body_size(request: Request, call_next):
     if length and length.isdigit() and int(length) > MAX_BODY_BYTES:
         return JSONResponse({"detail": f"body larger than {MAX_BODY_BYTES} bytes"}, status_code=413)
     return await call_next(request)
-
-
-def require_key(x_api_key: str = Header(default="")):
-    if not secrets.compare_digest(x_api_key, API_KEY):
-        raise HTTPException(status_code=401, detail="invalid API key")
-
-
-def check_device(device: Any) -> str:
-    if not isinstance(device, str) or not DEVICE_RE.match(device):
-        raise HTTPException(422, "device must be 1-64 characters of [A-Za-z0-9_-]")
-    return device
 
 
 def validate_reading(r: Any) -> tuple[str, str | None, dict, list[float] | None, int]:
@@ -386,38 +343,17 @@ def occupancy_history(
     threshold_dbm: int | None = Query(default=None, ge=-127, le=0, description="recount with this range"),
 ):
     check_device(device)
-    end = parse_time(to) if to else time.time()
-    start = parse_time(from_) if from_ else (end - 3600 if end else None)
-    if start is None or end is None:
-        raise HTTPException(422, "from/to must be ISO 8601 timestamps")
-    if end <= start:
-        raise HTTPException(422, "to must be after from")
-    n_buckets = math.ceil((end - start) / step_s)
-    if n_buckets > 10000:
+    start, end = time_range(from_, to, 3600, time.time())
+    if (end - start) / step_s > 10000:
         raise HTTPException(422, "too many points; increase step_s or shorten the range")
-
     with db() as conn:
-        rows = conn.execute(
-            """SELECT measured_at, people_raw, people_factor, rssis FROM readings
-               WHERE device = ? AND measured_at >= ? AND measured_at < ?""",
-            (device, start, end),
-        ).fetchall()
-    buckets: list[list[float]] = [[] for _ in range(n_buckets)]
-    for r in rows:
-        if threshold_dbm is None:
-            value = r["people_raw"]
-        elif r["rssis"] is not None:
-            value = count(json.loads(r["rssis"]), threshold_dbm, r["people_factor"])[1]
-        else:
-            value = None  # can't recount without the raw device list
-        if value is not None:
-            buckets[int((r["measured_at"] - start) // step_s)].append(value)
+        values = bucket_people(conn, device, start, end, step_s, threshold_dbm)
     return {
         "device": device,
         "step_s": step_s,
         "threshold_dbm": threshold_dbm,
         "points": [
-            {"ts": iso(start + i * step_s), "people": round(statistics.fmean(b), 1) if b else None}
-            for i, b in enumerate(buckets)
+            {"ts": iso(start + i * step_s), "people": None if v is None else round(v, 1)}
+            for i, v in enumerate(values)
         ],
     }

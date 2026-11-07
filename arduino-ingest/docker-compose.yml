@@ -1,6 +1,8 @@
 services:
   ingest:
-    build: .
+    build:
+      context: ..
+      dockerfile: arduino-ingest/Dockerfile
     container_name: hackaburger-ingest
     restart: unless-stopped
     env_file: .env

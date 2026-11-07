@@ -170,11 +170,19 @@ class ServerClient:
         except ValueError:
             return status, None
 
-    def fetch_config(self) -> dict | None:
-        """GET this board's config (a small request, used between sends). None on any failure."""
+    def fetch_config(self, applied_version: int | None = None) -> dict | None:
+        """GET this board's config (a small request, used between sends). None on any failure.
+
+        `applied_version` (the config_version the board is running) goes along as
+        ?applied=N so the server can mark a change as applied without waiting for
+        the next data POST.
+        """
         if time.time() < self.auth_blocked_until:
             return None
-        req = urllib.request.Request(self.config_url, method="GET", headers={
+        url = self.config_url
+        if applied_version is not None and applied_version >= 0:
+            url += f"?applied={int(applied_version)}"
+        req = urllib.request.Request(url, method="GET", headers={
             "X-API-Key": self.api_key, "User-Agent": "hackaburger-uno-q/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:

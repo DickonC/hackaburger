@@ -298,7 +298,8 @@ async def main():
             elif args.config_poll > 0 and time.monotonic() - last_config_check >= args.config_poll:
                 # Between sends, a small GET keeps settings changes to within ~15 s.
                 last_config_check = time.monotonic()
-                apply_config(await asyncio.to_thread(client.fetch_config), "config check")
+                apply_config(await asyncio.to_thread(client.fetch_config, cfg["config_version"]),
+                             "config check")
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ The existing fields, plus one new one, `send_every_s`:
 - Every board message contains `data.config_version`, the version the board was running when it measured.
 - Compare it with the stored version: if the board's version is lower than the server's, the change is **pending**. Otherwise it's **applied**.
 - Expose this per board (see `boards` in `/heatmap/latest`), so the webapp can show "LED range −60 applied" or "waiting for board 3".
+- **Small backend change needed:** boards also apply settings from their 15 s settings check (`GET /ingest/config/{device}`), and they send the version they're running as **`?applied=N`**. Record it as that board's applied version: the higher of this and the version from its last data message. Otherwise a change shows as "pending" until the next data POST, which is up to 5 min in dev mode, even though the board already runs it. Keep the response unchanged (the board's full config). Ignore `applied` if it's missing or not an integer.
 
 ### Modes and bulk changes
 
@@ -326,10 +327,11 @@ Store the people estimate permanently. It's anonymous.
 8. **Grid total:** the sum of all `heatmap.values` ≈ `people_estimate` (±10 %, before time smoothing; Gaussians near the walls are clipped).
 9. **Mode switch:** `PUT /heatmap/mode {"mode": "live"}` sets `send_every_s: 0, interval_s: 10, window_s: 20` on all four board configs, and increments their `config_version`.
 10. **Bulk LED range:** `PUT /heatmap/boards {"threshold_dbm": -60}` raises `config_version` on all four boards. Each board shows `pending: true` until a message arrives with the new version, then `pending: false`.
-11. **Heatmap rule:** `PUT /ingest/config/uno-q-2 {"interval_s": 5}` on its own → `422`. The same value via `PUT /heatmap/boards` → `200`, for all four boards.
-12. **Obvious non-people:** a device with `kind: "earbuds"` and strong RSSI on all four boards → `rejected`, `not_a_person`. After `PUT /heatmap/config {"filter": {"exclude_kinds": []}}` it counts as `in_room`.
-13. **Stationary:** an id present in every snapshot for more than `stationary_h` hours → `rejected`, `stationary`.
-14. **Auth:** all new endpoints return `401` without a valid `X-API-Key`.
+11. **Applied via settings check:** after `PUT /heatmap/boards {"threshold_dbm": -60}`, a `GET /ingest/config/uno-q-1?applied=<new version>` marks uno-q-1 as `pending: false` straight away.
+12. **Heatmap rule:** `PUT /ingest/config/uno-q-2 {"interval_s": 5}` on its own → `422`. The same value via `PUT /heatmap/boards` → `200`, for all four boards.
+13. **Obvious non-people:** a device with `kind: "earbuds"` and strong RSSI on all four boards → `rejected`, `not_a_person`. After `PUT /heatmap/config {"filter": {"exclude_kinds": []}}` it counts as `in_room`.
+14. **Stationary:** an id present in every snapshot for more than `stationary_h` hours → `rejected`, `stationary`.
+15. **Auth:** all new endpoints return `401` without a valid `X-API-Key`.
 
 ## Quick start (what the team does on the day)
 

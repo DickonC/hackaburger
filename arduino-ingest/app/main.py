@@ -36,11 +36,12 @@ DEFAULT_CONFIG = {
     "people_factor": 0.7,
     "send_devices": True,
     "display": True,
+    "send_every_s": 300,  # POST on clock boundaries every N s; 0 = every interval_s (live)
 }
 PRESETS = {
-    "room": {"threshold_dbm": -75, "window_s": 30, "interval_s": 5},
-    "demo": {"threshold_dbm": -40, "window_s": 6, "interval_s": 1},
-    "venue": {"threshold_dbm": -100, "window_s": 30, "interval_s": 5},
+    "room": {"threshold_dbm": -75, "window_s": 30, "interval_s": 5, "send_every_s": 300},
+    "demo": {"threshold_dbm": -40, "window_s": 6, "interval_s": 1, "send_every_s": 0},
+    "venue": {"threshold_dbm": -100, "window_s": 30, "interval_s": 5, "send_every_s": 300},
 }
 INITIAL_PRESET = {"uno-q-1": "room", "uno-q-2": "demo"}
 
@@ -49,7 +50,8 @@ CONFIG_FIELDS = {
     "enabled": (bool, None, None),
     "threshold_dbm": (int, -100, -30),
     "window_s": (int, 2, 300),
-    "interval_s": ((int, float), 1, 60),
+    "interval_s": ((int, float), 1, 600),
+    "send_every_s": (int, 0, 3600),
     "people_factor": ((int, float), 0.1, 2.0),
     "send_devices": (bool, None, None),
     "display": (bool, None, None),
@@ -320,7 +322,8 @@ def occupancy_latest(device: str):
             )
         ] if smooth_s else []
     data = json.loads(last["data"])
-    online = time.time() - parse_time(last_received) <= 3 * cfg["interval_s"] + 5
+    send_period = cfg["send_every_s"] or cfg["interval_s"]  # boards POST every send_every_s (0 = interval_s)
+    online = time.time() - parse_time(last_received) <= 3 * send_period + 5
     people = round_half_up(last["people_raw"])
     return {
         "device": device,

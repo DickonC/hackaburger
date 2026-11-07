@@ -38,7 +38,7 @@ def test_old_format_still_works(client):
     body = r.json()
     assert body["stored"] == 1
     assert set(body["config"]) == {"config_version", "enabled", "threshold_dbm", "window_s",
-                                   "interval_s", "people_factor", "send_devices", "display"}
+                                   "interval_s", "people_factor", "send_devices", "display", "send_every_s"}
     rows = client.get("/data?device=uno-q-1&limit=1", headers=KEY).json()
     assert rows[0]["data"] == {"people": 7}
     latest = client.get("/occupancy/latest?device=uno-q-1", headers=KEY).json()
@@ -52,7 +52,7 @@ def test_initial_configs(client):
     assert (c1["threshold_dbm"], c1["window_s"], c1["interval_s"]) == (-75, 30, 5)
     assert (c2["threshold_dbm"], c2["window_s"], c2["interval_s"]) == (-40, 6, 1)
     assert c3 == {"config_version": 1, "enabled": True, "threshold_dbm": -75, "window_s": 30,
-                  "interval_s": 5, "people_factor": 0.7, "send_devices": True, "display": True}
+                  "interval_s": 5, "people_factor": 0.7, "send_devices": True, "display": True, "send_every_s": 300}
 
 
 def test_worked_example_and_recount(client):
@@ -121,8 +121,18 @@ def test_body_too_large(client):
     assert r.status_code == 413
 
 
+def test_send_every_s_setting(client):
+    r = client.put("/config/send-test", json={"send_every_s": 0, "interval_s": 600}, headers=KEY)
+    assert r.status_code == 200 and r.json()["send_every_s"] == 0 and r.json()["interval_s"] == 600
+    for bad in ({"send_every_s": -1}, {"send_every_s": 3601}, {"send_every_s": 1.5}, {"interval_s": 601}):
+        assert client.put("/config/send-test", json=bad, headers=KEY).status_code == 422
+    assert client.put("/config/send-test", json={"preset": "demo"}, headers=KEY).json()["send_every_s"] == 0
+    reply = client.post("/data", json={"device": "send-test", "data": {"people": 1}}, headers=KEY).json()
+    assert reply["config"]["send_every_s"] == 0
+
+
 def test_online_status(client):
-    client.put("/config/online-test", json={"interval_s": 1}, headers=KEY)
+    client.put("/config/online-test", json={"interval_s": 1, "send_every_s": 0}, headers=KEY)
     client.post("/data", json={"device": "online-test", "data": {"people": 1}}, headers=KEY)
     assert client.get("/occupancy/latest?device=online-test", headers=KEY).json()["online"] is True
     time.sleep(8.2)  # 3 * 1 + 5 s

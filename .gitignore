@@ -27,3 +27,13 @@ out/
 coverage/
 *.log
 npm-debug.log*
+
+# Server data (SQLite database)
+arduino-ingest/data/
+
+# Published frontend copy (web/publish)
+web/public/
+
+# Forecaster: downloaded data and generated outputs (python run.py aalborg)
+occupancy_forecaster/data/
+occupancy_forecaster/outputs/

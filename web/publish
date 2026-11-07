@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Copy the frontend files into web/public, which the hackaburger-web container serves.
+# Only the files listed here are published, never the rest of the repo.
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")"
+FILES=(index.html backend.js)
+mkdir -p public
+for f in "${FILES[@]}"; do
+  cp "../$f" "public/.$f.tmp" && mv "public/.$f.tmp" "public/$f"
+done
+echo "Published: ${FILES[*]}"

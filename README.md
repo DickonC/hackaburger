@@ -4,6 +4,17 @@ Hackathon project for Saturday.
 
 > **Status:** Project idea and tech stack not yet decided. Update this section once the team has picked a direction.
 
+## What's here
+
+| Folder | What |
+|---|---|
+| [`ble_scanner/`](ble_scanner/) | BLE scanner that runs on the Arduino UNO Q |
+| [`arduino/`](arduino/) | Microcontroller sketch for the LED matrix |
+| [`index.html`](index.html), [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) | Frontend prototype and design system |
+| [`arduino-ingest/`](arduino-ingest/) | Backend: board data, people count, rooms, CO₂ estimate, forecast API. Live at `https://hackaburger.cch-uk.tech/ingest/` |
+| [`occupancy_forecaster/`](occupancy_forecaster/) | People forecasting model (used by the backend) |
+| [`docs/`](docs/) | Board ↔ server format ([`server-api.md`](docs/server-api.md)), rooms/CO₂/forecast API and frontend wiring ([`backend-api.md`](docs/backend-api.md)) |
+
 ## Team
 
 - Dickon Collins ([@DickonC](https://github.com/DickonC))

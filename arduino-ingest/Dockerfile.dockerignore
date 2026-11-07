@@ -1,0 +1,8 @@
+# Only send what the image needs (the build context is the repo root)
+*
+!arduino-ingest/requirements.txt
+!arduino-ingest/app
+!occupancy_forecaster/occupancy_core.py
+!occupancy_forecaster/rolling_24h.py
+!occupancy_forecaster/aalborg.py
+**/__pycache__

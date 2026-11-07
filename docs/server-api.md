@@ -51,7 +51,7 @@ Body:
 | Field | Type | Meaning |
 |---|---|---|
 | `device` | string | Board name: `uno-q-1`, `uno-q-2`, … |
-| `ts` | string | When the board made this measurement, UTC ISO 8601. It can differ from the server's `received_at` when queued messages are resent. |
+| `ts` | string | When the board made this measurement, UTC ISO 8601. **Aligned to the clock:** always a whole multiple of `interval_s` (e.g. `…:20:00`, `…:20:10`), and boards are internet time-synced, so boards with the same `interval_s` produce messages with identical `ts` that describe the same moment. Join boards on `ts` for the heatmap. It can differ from the server's `received_at` when queued messages are resent. |
 | `data.people` | int | Estimated people in range: `round(devices_in_range × people_factor)`. **This is the main number for the webapp.** |
 | `data.devices_in_range` | int | Devices heard within `threshold_dbm` during the last `window_s` seconds. The LED matrix shows this number. |
 | `data.heard_total` | int | All devices heard in the window, at any distance. For information only. |
@@ -79,7 +79,8 @@ In a busy venue the board hears 300–500 devices, which makes a message of roug
     "interval_s": 2,
     "people_factor": 0.7,
     "send_devices": true,
-    "display": true
+    "display": true,
+    "send_every_s": 300
   }
 }
 ```
@@ -96,6 +97,7 @@ In a busy venue the board hears 300–500 devices, which makes a message of roug
 | `people_factor` | number | `0.7` | `0.1` … `2.0` | People per device. Calibrate against a real headcount. |
 | `send_devices` | bool | `true` | | Whether to include the raw `devices` list (all devices heard). |
 | `display` | bool | `true` | | Show `devices_in_range` on the LED matrix. |
+| `send_every_s` | int | `300` | `0` … `3600` | Seconds between POSTs, on clock boundaries (300 = every full 5 min). `0` = send at every `interval_s` (**live mode, needed for the heatmap**). Measuring and the LED still run every `interval_s`. |
 
 **Range guide for `threshold_dbm`** (rough indoor values. Calibrate on site):
 

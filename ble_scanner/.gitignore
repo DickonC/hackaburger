@@ -4,3 +4,4 @@ config.json
 config.tmp
 .env
 start.args
+scanner.log.1

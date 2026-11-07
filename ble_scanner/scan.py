@@ -29,6 +29,8 @@ Usage:
 
 import argparse
 import asyncio
+import math
+import re
 import statistics
 import time
 from collections import deque
@@ -77,11 +79,21 @@ class OccupancyScanner:
         return out
 
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def utc_iso(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def build_message(device: str, cfg: dict, heard, in_range, hasher) -> dict:
+def next_tick(interval: float, now: float | None = None) -> float:
+    """Next wall-clock time that is a whole multiple of `interval` (e.g. :00, :10, :20).
+
+    All boards use the internet-synced system clock, so boards with the same
+    interval measure and send at the same moments.
+    """
+    now = time.time() if now is None else now
+    return (math.floor(now / interval + 1e-6) + 1) * interval
+
+
+def build_message(device: str, cfg: dict, heard, in_range, hasher, ts: float) -> dict:
     data = {
         "people": None,
         "devices_in_range": len(in_range),
@@ -102,7 +114,7 @@ def build_message(device: str, cfg: dict, heard, in_range, hasher) -> dict:
             ]
     else:
         data["devices_in_range"] = None
-    return {"device": device, "ts": utc_now(), "data": data}
+    return {"device": device, "ts": utc_iso(ts), "data": data}
 
 
 async def main():
@@ -110,14 +122,19 @@ async def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--threshold", type=int, help="range: min median RSSI in dBm to count a device (default -75)")
     p.add_argument("--window", type=int, help="seconds a device stays counted after it was last heard (default 30)")
-    p.add_argument("--interval", type=float, help="seconds between reports/POSTs (default 5)")
+    p.add_argument("--interval", type=float,
+                   help="seconds between reports, aligned to the clock: 10 -> :00, :10, :20 (default 5)")
     p.add_argument("--people-factor", type=float, help="people per counted device (default 0.7)")
     p.add_argument("--display", action="store_true", help="show the in-range count on the UNO Q LED matrix")
     p.add_argument("--send", action="store_true", help="POST to the ingest server (needs .env)")
     p.add_argument("--device", help="board name on the server (overrides INGEST_DEVICE)")
+    p.add_argument("--board-number", type=int,
+                   help="dots shown top-left on the LED (default: the number in the device name, "
+                        "e.g. uno-q-3 -> 3)")
     p.add_argument("--send-interval", type=float,
-                   help="POST at most every N seconds (local override, e.g. 300 while the backend "
-                        "is in development); display still updates every interval")
+                   help="POST only every N seconds, aligned to the clock (300 -> every full 5 min). "
+                        "Fallback only: once the server sends send_every_s, that wins. "
+                        "The display still updates every interval")
     p.add_argument("-v", "--verbose", action="store_true", help="list each counted device")
     args = p.parse_args()
 
@@ -132,37 +149,51 @@ async def main():
     cfg, _ = merge_config(cfg, {k: v for k, v in cli.items() if v is not None})
 
     client = hasher = None
-    device = "local"
+    env = load_env()
+    device = args.device or env.get("INGEST_DEVICE") or "local"
     if args.send:
-        env = load_env()
         missing = [k for k in ("INGEST_API_KEY", "INGEST_ID_SECRET") if not env.get(k)]
         if missing:
             raise SystemExit(f"--send needs {', '.join(missing)} in {__file__.rsplit('/', 1)[0]}/.env")
-        device = args.device or env.get("INGEST_DEVICE") or "uno-q-1"
+        if device == "local":
+            device = "uno-q-1"
         client = ServerClient(env.get("INGEST_URL") or DEFAULT_URL, env["INGEST_API_KEY"], device)
         hasher = DeviceIdHasher(env["INGEST_ID_SECRET"])
 
     display = McuDisplay() if args.display else None
+    board_number = args.board_number
+    if board_number is None:
+        m = re.search(r"(\d+)$", device)
+        board_number = int(m.group(1)) if m else None
     scanner = OccupancyScanner(cfg["window_s"])
+
+    def send_every() -> float | None:
+        """Seconds between POSTs; None = every interval. Server setting wins over the flag."""
+        if cfg["send_every_s"] >= 0:
+            return cfg["send_every_s"] or None
+        return args.send_interval
 
     send_desc = "off"
     if client:
-        send_desc = f"every {args.send_interval:g}s" if args.send_interval else "every interval"
+        se = send_every()
+        send_desc = f"every {se:g}s" if se else "every interval"
     print(f"Scanning as '{device}'... (Ctrl+C to stop)  threshold={cfg['threshold_dbm']} dBm, "
           f"window={cfg['window_s']}s, interval={cfg['interval_s']}s, "
           f"send={send_desc}, display={'on' if display else 'off'}")
-    # First POST goes out after the first interval, then every --send-interval.
-    last_send = float("-inf")
+    # The first POST goes out at the first tick (so you see it working), then
+    # every --send-interval, on clock boundaries.
+    last_send_slot = None
 
     async with BleakScanner(detection_callback=scanner.on_advertisement):
         while True:
-            await asyncio.sleep(cfg["interval_s"])
+            tick = next_tick(cfg["interval_s"])
+            await asyncio.sleep(max(0.0, tick - time.time()))
             scanner.window_s = cfg["window_s"]
             heard = scanner.snapshot()
             in_range = [d for d in heard if d[1] >= cfg["threshold_dbm"]]
             people = round(len(in_range) * cfg["people_factor"])
 
-            stamp = time.strftime("%H:%M:%S")
+            stamp = time.strftime("%H:%M:%S", time.localtime(tick))
             state = "" if cfg["enabled"] else "  [disabled by server]"
             print(f"\n[{stamp}] in range: {len(in_range)} devices "
                   f"(of {len(heard)} heard, threshold {cfg['threshold_dbm']} dBm) "
@@ -172,13 +203,14 @@ async def main():
                     print(f"   {rssi:6.1f} dBm  n={n:<3} {addr}  {scanner.names.get(addr, '-')}")
 
             if display and cfg["display"]:
-                display.show_count(len(in_range) if cfg["enabled"] else 0)
+                display.show_count(len(in_range) if cfg["enabled"] else 0, board_number)
 
-            due = (args.send_interval is None
-                   or time.monotonic() - last_send >= args.send_interval - 0.5)
+            se = send_every()
+            slot = None if not se else math.floor(tick / se + 1e-6)
+            due = slot is None or slot != last_send_slot
             if client and due:
-                last_send = time.monotonic()
-                msg = build_message(device, cfg, heard, in_range, hasher)
+                last_send_slot = slot
+                msg = build_message(device, cfg, heard, in_range, hasher, tick)
                 new_cfg = await asyncio.to_thread(client.send, msg)
                 print(f"   [server] {client.last_status}")
                 if new_cfg is not None:

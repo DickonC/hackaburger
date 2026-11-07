@@ -10,6 +10,7 @@
 #   ./scanner.sh autostart on [options]    start automatically at boot with these options
 #                                          (also used by a plain './scanner.sh start')
 #   ./scanner.sh autostart off             no autostart (saved options are kept)
+#   ./scanner.sh ensure                    start with saved options if not running (used by the watchdog)
 #
 # Options are passed to scan.py, e.g.: ./scanner.sh start --display --threshold -65
 # If .env exists, --send is added automatically; add --local to run without sending.
@@ -37,6 +38,7 @@ start() {
     args+=(--send)
   fi
   cd "$DIR" || exit 1
+  [[ -f "$LOGFILE" ]] && mv -f "$LOGFILE" "$LOGFILE.1"   # keep the previous run's log
   nohup "$PY" -u scan.py "${args[@]}" >"$LOGFILE" 2>&1 &
   echo $! >"$PIDFILE"
   sleep 1
@@ -62,13 +64,16 @@ status() {
 }
 
 autostart() {
-  local line="@reboot sleep 20 && $DIR/scanner.sh start"
+  # @reboot starts it after power-on; the every-minute watchdog restarts it if it
+  # ever stops (e.g. Bluetooth not ready yet at boot, or a crash).
+  local line="@reboot sleep 20 && $DIR/scanner.sh start
+* * * * * $DIR/scanner.sh ensure >/dev/null 2>&1"
   local mode="${1:-}"; shift || true
   case "$mode" in
     on)  if [[ $# -gt 0 ]]; then printf '%s\n' "$@" >"$ARGSFILE"; fi
-         (crontab -l 2>/dev/null | grep -v "scanner.sh start"; echo "$line") | crontab -
-         echo "Autostart on (~20 s after boot) with: $(tr '\n' ' ' <"$ARGSFILE" 2>/dev/null || echo "${DEFAULT_ARGS[*]}")" ;;
-    off) crontab -l 2>/dev/null | grep -v "scanner.sh start" | crontab -
+         (crontab -l 2>/dev/null | grep -v "scanner.sh"; echo "$line") | crontab -
+         echo "Autostart on (~20 s after boot, watchdog every minute) with: $(tr '\n' ' ' <"$ARGSFILE" 2>/dev/null || echo "${DEFAULT_ARGS[*]}")" ;;
+    off) crontab -l 2>/dev/null | grep -v "scanner.sh" | crontab -
          echo "Autostart off." ;;
     *)   echo "usage: $0 autostart on [options] | off"; exit 1 ;;
   esac
@@ -83,5 +88,6 @@ case "$cmd" in
   log)       tail -n 30 -f "$LOGFILE" ;;
   run)       cd "$DIR" && exec "$PY" -u scan.py "$@" ;;
   autostart) autostart "$@" ;;
-  *)         sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  ensure)    is_running || start ;;
+  *)         sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

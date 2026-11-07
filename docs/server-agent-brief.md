@@ -64,7 +64,7 @@
 - `devices` can hold 300–500 entries, so 15–25 KB per request. **Allow request bodies of at least 256 KB.**
 - `people`, `devices_in_range`, `heard_total`, `config_version` and `settings` are the board's own values. Store them, but compute your own count from `devices` too (below).
 - All fields inside `data` other than `people` may be missing. That's the old format, so handle it gracefully.
-- `ts` is the board's measurement time (UTC). It can be older than `received_at` when the board resends queued messages. **Use `ts` for time series**, and fall back to `received_at` when `ts` is null.
+- `ts` is the board's measurement time (UTC), aligned to whole multiples of `interval_s`, so boards with the same interval share identical `ts` values. It can be older than `received_at` when the board resends queued messages. **Use `ts` for time series**, and fall back to `received_at` when `ts` is null.
 
 **Validation (return `422` with a message if it fails):**
 - `device`: a non-empty string of at most 64 characters, matching `[A-Za-z0-9_-]+`.
@@ -87,6 +87,7 @@
 | `people_factor` | number | 0.7 | 0.1 … 2.0 | People per counted device. |
 | `send_devices` | bool | `true` | | Whether the board includes `devices`. |
 | `display` | bool | `true` | | Whether the board shows its count on its LED matrix. |
+| `send_every_s` | int | 300 | 0 … 3600 | Seconds between board POSTs, on clock boundaries. `0` = every `interval_s` (live mode for the heatmap). Boards still measure every `interval_s`. |
 
 **Initial config:**
 - `uno-q-1` (room mode): `threshold_dbm` −75, `window_s` 30, `interval_s` 5
@@ -123,7 +124,8 @@
 - Every successful `POST /ingest/data` returns:
   ```json
   { "stored": 1, "config": { "config_version": 4, "enabled": true, "threshold_dbm": -40, "window_s": 6,
-                             "interval_s": 1, "people_factor": 0.7, "send_devices": true, "display": true } }
+                             "interval_s": 1, "people_factor": 0.7, "send_devices": true, "display": true,
+                             "send_every_s": 300 } }
   ```
   Always include the **full** config. The board ignores unknown fields and only re-applies when `config_version` changes.
 

@@ -38,6 +38,9 @@ CONFIG_SPEC = {
     "people_factor": (float, 0.7, 0.1, 2.0),
     "send_devices": (bool, True, None, None),
     "display": (bool, True, None, None),
+    # Seconds between POSTs, on clock boundaries. 0 = every interval_s.
+    # -1 (board default) = not set by the server: use --send-interval, else every interval.
+    "send_every_s": (int, -1, 0, 3600),
 }
 
 

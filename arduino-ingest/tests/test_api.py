@@ -50,7 +50,7 @@ def test_initial_configs(client):
     c2 = client.get("/config/uno-q-2", headers=KEY).json()
     c3 = client.get("/config/other-board", headers=KEY).json()
     assert (c1["threshold_dbm"], c1["window_s"], c1["interval_s"]) == (-75, 30, 5)
-    assert (c2["threshold_dbm"], c2["window_s"], c2["interval_s"]) == (-40, 6, 1)
+    assert (c2["threshold_dbm"], c2["window_s"], c2["interval_s"]) == (-75, 30, 5)  # heatmap boards share timing
     assert c3 == {"config_version": 1, "enabled": True, "threshold_dbm": -75, "window_s": 30,
                   "interval_s": 5, "people_factor": 0.7, "send_devices": True, "display": True, "send_every_s": 300}
 
@@ -78,7 +78,7 @@ def test_config_change_reaches_only_that_board(client):
     reply = client.post("/data", json={"device": "uno-q-1", "data": {"people": 1}}, headers=KEY).json()
     assert reply["config"]["threshold_dbm"] == -40
     reply = client.post("/data", json={"device": "uno-q-2", "data": {"people": 1}}, headers=KEY).json()
-    assert reply["config"]["threshold_dbm"] == -40 and reply["config"]["config_version"] == 1
+    assert reply["config"]["threshold_dbm"] == -75 and reply["config"]["config_version"] == 1
 
     r = client.put("/config/uno-q-1", json={"preset": "room"}, headers=KEY).json()
     assert (r["threshold_dbm"], r["window_s"], r["interval_s"]) == (-75, 30, 5)

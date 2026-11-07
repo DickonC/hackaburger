@@ -3,6 +3,19 @@
 Counts nearby Bluetooth Low Energy devices and estimates how many people are in the room.
 For now it only prints results locally and sends nothing over the network.
 
+## Set up a new board (one command from the Mac)
+
+After the board's first setup in App Lab, the update (`sudo apt update && sudo apt full-upgrade -y --allow-downgrades && sudo usermod -aG arduino-router arduino`), eduroam and one power cycle:
+
+```bash
+ble_scanner/setup_board.sh                       # lists connected boards with their serials
+ble_scanner/setup_board.sh <serial> uno-q-3 --display --threshold -75 --window 30 --interval 5 --send-interval 300
+```
+
+It copies the scanner, installs packages, uploads the LED sketch, and writes `.env` from `ble_scanner/.env.shared`.
+That file holds the API key and the shared ID secret. It's git-ignored, so keep it private and never commit it.
+It then turns on autostart with the given options.
+
 ## Run on the Arduino UNO Q (Linux side)
 
 ```bash
@@ -21,7 +34,7 @@ If you get a permission error, add your user to the `bluetooth` group:
 On the board, `scanner.sh` runs the scanner in the background, so it keeps going after you close the shell:
 
 ```bash
-./scanner.sh start                          # default: --display -v
+./scanner.sh start                          # default: --display, plus --send if .env exists
 ./scanner.sh start --display --threshold -65
 ./scanner.sh status                         # running? + last count
 ./scanner.sh log                            # live output (Ctrl+C leaves, scanner keeps running)
@@ -37,6 +50,25 @@ ADB=~/Library/Arduino15/packages/arduino/tools/adb/32.0.0/adb
 $ADB shell '~/ble_scanner/scanner.sh status'
 $ADB shell                                  # interactive shell on the board
 ```
+
+## Send to the server
+
+With `--send` the scanner POSTs to the ingest server in the format from [docs/server-api.md](../docs/server-api.md)
+and applies the settings (range, window, interval, …) that the server sends back. They are saved in `config.json`, so they survive a reboot.
+
+Credentials go in `ble_scanner/.env` on the board. It's git-ignored, so never commit it:
+
+```bash
+cat > ~/ble_scanner/.env <<'ENV'
+INGEST_API_KEY=<key from the server team>
+INGEST_DEVICE=uno-q-1
+INGEST_ID_SECRET=<same random string on every board>
+ENV
+chmod 600 ~/ble_scanner/.env
+```
+
+`INGEST_ID_SECRET` anonymises device addresses. **All boards must use the same value** so the server can match devices across boards.
+Command-line flags like `--threshold` set the starting values. After that, the server's replies decide.
 
 ## Run on a Mac (for testing)
 

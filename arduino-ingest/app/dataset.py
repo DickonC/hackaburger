@@ -2,13 +2,12 @@
 
     docker exec hackaburger-ingest python -m app.dataset
 
-- creates/updates rooms aalborg-a..f with their 2023 history (people, measured CO2, windows)
+- fills the forecasting tables (dataset_rooms, dataset_occupancy; see forecast.py) with
+  rooms aalborg-a..f and their 2023 history: people (cameras), measured CO2, windows
 - calibrates each room's ventilation from its measured CO2 (see calibrate_co2)
 - trains the short-term models (occupancy_core) into MODELS_DIR/<room>/
-- removes the old synthetic history and points the preset rooms at a dataset room
-  (model_from), with ventilation scaled from the dataset's airflow per person
 
-Safe to re-run: the dataset rooms' history is replaced, not appended.
+The live rooms and board data are not touched. Safe to re-run: the dataset is replaced.
 """
 
 import json
@@ -22,17 +21,16 @@ import numpy as np
 import pandas as pd
 
 from app.core import db
-from app.rooms import MODELS_DIR, ROOM_DEFAULTS, migrate
+from app.forecast import MODELS_DIR, migrate
 
 sys.path.insert(0, os.environ.get("FORECASTER_DIR", "/app/occupancy_forecaster"))
 import aalborg  # noqa: E402
 from occupancy_core import read_series, train_backtest_forecast  # noqa: E402
 
 RAW_DIR = Path(os.environ.get("DATASET_DIR", "/data/datasets"))
-SOURCE = "aalborg-2023"
-CO2_PER_PERSON_LPH = ROOM_DEFAULTS["co2_gen_lph"]
-# Preset rooms borrow a dataset room's patterns (scaled by capacity); capacity = the frontend's booked count
-PRESET_LINKS = {"appleton": ("aalborg-a", 12), "forum": ("aalborg-d", 20), "personal": ("aalborg-c", 1)}
+CO2_PER_PERSON_LPH = 16.0  # L/h, as the live rooms' default
+K_FLOW = 350.0  # m3/h per m2 of open window, as the live rooms' default
+WINDOW_AREA_M2 = 1.0  # not in the dataset
 
 
 def calibrate_co2(wide: pd.DataFrame, letter: str) -> dict:
@@ -77,59 +75,82 @@ def validate_co2(wide: pd.DataFrame, letter: str, cal: dict) -> float:
         sim = float(day_c[sel].iloc[0])
         for people, measured, window in zip(day_n[sel], day_c[sel], day_w[sel]):
             errors.append(abs(sim - measured))
-            q = cal["airflow_m3h"] + (ROOM_DEFAULTS["k_flow"] * 1.0 if window == 1 else 0)
+            q = cal["airflow_m3h"] + (K_FLOW * WINDOW_AREA_M2 if window == 1 else 0)
             decay = math.exp(-(q / cal["volume_m3"]) / 12)
             sim = cal["outdoor_ppm"] + people * CO2_PER_PERSON_LPH / q * 1000 * (1 - decay) + (sim - cal["outdoor_ppm"]) * decay
     return round(float(np.mean(errors)), 1) if errors else float("nan")
 
 
+def replay_suggestions(n: pd.Series, limit: int = 12) -> list[str]:
+    """Weekday 08:00-14:00 moments where a replay can use the short-term models and be checked.
+
+    The count must be recorded at the moment, 5 minutes, 1 day and 1 week before it, and for
+    at least 90% of the following 8 hours. Spread over the year, busiest first.
+    """
+    s = n.groupby(n.index).first()  # DST fall-back duplicates
+    s = s.asfreq("5min")
+    ok = []
+    for t in s.index[(s.index.day_of_week < 5) & (s.index.minute == 0) & (s.index.hour >= 8) & (s.index.hour <= 14)]:
+        if any(pd.isna(s.get(t - pd.Timedelta(d))) for d in ("0min", "5min", "1D", "7D")):
+            continue
+        ahead = s.loc[t:t + pd.Timedelta("8h")]
+        if ahead.notna().mean() >= 0.9:
+            ok.append((t, float(ahead.sum())))
+    by_week = {}
+    for t, busy in ok:  # at most one per ISO week: the busiest
+        key = t.isocalendar()[:2]
+        if key not in by_week or busy > by_week[key][1]:
+            by_week[key] = (t, busy)
+    best = sorted(by_week.values(), key=lambda x: -x[1])[:limit]
+    return [t.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ") for t, _ in sorted(best)]
+
+
 def import_rooms(conn: sqlite3.Connection, wide: pd.DataFrame) -> dict:
     report = {}
+    conn.execute("DELETE FROM dataset_occupancy WHERE room_id LIKE 'aalborg-%'")
     for letter in aalborg.ROOMS:
         rid = aalborg.room_id(letter)
         cal = calibrate_co2(wide, letter)
         n = wide[f"Room{letter}:People__amount"]
-        room = {**ROOM_DEFAULTS, "name": f"Aalborg office {letter} (dataset)", "volume_m3": cal["volume_m3"],
-                "capacity": int(n.max()), "timezone": aalborg.TIMEZONE, "outdoor_ppm": float(cal["outdoor_ppm"]),
-                "infiltration_ach": cal["infiltration_ach"], "windows": [{"name": "Window", "area_m2": 1.0}]}
-        conn.execute("INSERT OR REPLACE INTO rooms (id, room) VALUES (?, ?)", (rid, json.dumps(room)))
-        conn.execute("DELETE FROM occupancy_history WHERE room_id = ?", (rid,))
-        rows = pd.DataFrame({"ts": wide.index.map(lambda t: t.timestamp()), "people": n,
-                             "co2": wide[f"Room{letter}:Sensor__CO2"],
-                             "window": wide[f"Room{letter}:Window__opened_closed"]}).dropna(subset=["people"])
-        conn.executemany(
-            "INSERT OR REPLACE INTO occupancy_history (room_id, ts, people, source, co2_ppm, window_open) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            [(rid, t, p, SOURCE, None if math.isnan(co2) else co2, None if math.isnan(win) else int(win))
-             for t, p, co2, win in rows.itertuples(index=False)])
-        report[rid] = {**cal, "capacity": room["capacity"], "history_points": len(rows),
-                       "co2_model_mae_ppm": validate_co2(wide, letter, cal)}
+        co2 = wide[f"Room{letter}:Sensor__CO2"]
+        win = wide[f"Room{letter}:Window__opened_closed"]
+        rows = [(rid, t.timestamp(), None if math.isnan(p) else p, None if math.isnan(c) else c,
+                 None if math.isnan(w) else int(w))
+                for t, p, c, w in zip(wide.index, n, co2, win) if not (math.isnan(p) and math.isnan(c))]
+        conn.executemany("INSERT OR REPLACE INTO dataset_occupancy VALUES (?, ?, ?, ?, ?)", rows)
+        report[rid] = {
+            "name": f"Aalborg office {letter}",
+            "capacity": int(n.max()),
+            "timezone": aalborg.TIMEZONE,
+            "volume_m3": cal["volume_m3"],
+            "airflow_m3h": cal["airflow_m3h"],
+            "outdoor_ppm": float(cal["outdoor_ppm"]),
+            "co2_gen_lph": CO2_PER_PERSON_LPH,
+            "k_flow": K_FLOW,
+            "window_area_m2": WINDOW_AREA_M2,
+            "calibration": {"steady_hours": cal["steady_hours"], "co2_model_mae_ppm": validate_co2(wide, letter, cal),
+                            "volume_assumed": cal["volume_m3"] == 60.0},
+            "replay_suggestions": replay_suggestions(n),
+            "source": f"doi:{aalborg.DOI} (CC BY 4.0)",
+        }
     return report
-
-
-def link_presets(conn: sqlite3.Connection, report: dict):
-    """Drop synthetic history; give the preset rooms dataset patterns and dataset-based ventilation."""
-    conn.execute("DELETE FROM occupancy_history WHERE source = 'synthetic'")
-    per_person = float(np.median([r["airflow_m3h"] / r["capacity"] for r in report.values()]))
-    for rid, (source, capacity) in PRESET_LINKS.items():
-        row = conn.execute("SELECT room FROM rooms WHERE id = ?", (rid,)).fetchone()
-        if not row:
-            continue
-        room = {**ROOM_DEFAULTS, **json.loads(row[0])}
-        room.update(model_from=source, capacity=capacity,
-                    infiltration_ach=round(per_person * capacity / room["volume_m3"], 3))
-        conn.execute("UPDATE rooms SET room = ? WHERE id = ?", (json.dumps(room), rid))
-    return per_person
 
 
 def train_models(csv_path: Path, report: dict):
     for rid, info in report.items():
-        out = MODELS_DIR / rid
         series = read_series(csv_path, rid)
-        result = train_backtest_forecast(series, rid, info["capacity"], out)
-        chosen = result["metrics"][result["metrics"]["selected"]]
-        info["selected_models"] = (chosen.groupby("horizon_min")["model"].agg(lambda m: m.mode()[0])
-                                   .loc[[15, 30, 60]].to_dict())
+        result = train_backtest_forecast(series, rid, info["capacity"], MODELS_DIR / rid)
+        metrics = result["metrics"]
+        backtest = {}
+        for h in (15, 30, 60):
+            m = metrics[metrics["horizon_min"] == h]
+            backtest[f"{h}min"] = {
+                "selected": m[m["selected"]]["model"].mode()[0],
+                "mae": round(float(m[m["selected"]]["mae"].mean()), 3),
+                "persistence_mae": round(float(m[m["model"] == "persistence"]["mae"].mean()), 3),
+                "boosted_trees_mae": round(float(m[m["model"].str.startswith("boost")].groupby("model")["mae"].mean().min()), 3),
+            }
+        info["backtest"] = backtest
 
 
 def main():
@@ -140,15 +161,15 @@ def main():
     with db() as conn:
         migrate(conn)
         report = import_rooms(conn, wide)
-        per_person = link_presets(conn, report)
     train_models(csv_path, report)
-    (MODELS_DIR / "import_report.json").write_text(json.dumps(report, indent=2, default=str))
-    print(f"Aalborg office dataset (doi:{aalborg.DOI}, CC BY 4.0) imported.")
-    print(f"Preset rooms: ventilation {per_person:.1f} m3/h per person (dataset median); links {PRESET_LINKS}")
-    for rid, info in report.items():
-        print(f"  {rid}: {info['history_points']} points, capacity {info['capacity']}, V {info['volume_m3']} m3, "
-              f"airflow {info['airflow_m3h']} m3/h (ACH {info['infiltration_ach']}), outdoor {info['outdoor_ppm']} ppm, "
-              f"CO2 model MAE {info['co2_model_mae_ppm']} ppm, models {info.get('selected_models')}")
+    with db() as conn:
+        for rid, room in report.items():
+            conn.execute("INSERT OR REPLACE INTO dataset_rooms (id, room) VALUES (?, ?)", (rid, json.dumps(room)))
+    print(f"Aalborg office dataset (doi:{aalborg.DOI}, CC BY 4.0) imported into dataset_rooms/dataset_occupancy.")
+    for rid, r in report.items():
+        print(f"  {rid}: capacity {r['capacity']}, airflow {r['airflow_m3h']} m3/h, V {r['volume_m3']} m3"
+              f"{' (assumed)' if r['calibration']['volume_assumed'] else ''}, outdoor {r['outdoor_ppm']} ppm, "
+              f"CO2 model MAE {r['calibration']['co2_model_mae_ppm']} ppm, backtest {r['backtest']}")
 
 
 if __name__ == "__main__":

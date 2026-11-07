@@ -1,7 +1,6 @@
-"""Rooms, history, CO2 estimate and forecast. Run: ./run-tests"""
+"""Live rooms: CRUD, windows, board occupancy and estimated CO2. Run: ./run-tests"""
 
 import math
-import statistics
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -30,19 +29,19 @@ def make_room(client, **fields):
     return r.json()
 
 
-def flat_history(client, room_id, people, hours):
+def board_history(client, device, people, hours):
+    """The board reported `people` every 5 minutes for the last `hours`."""
     now = time.time()
-    pts = [{"ts": iso(now - i * 300), "people": people} for i in range(int(hours * 12) + 1)]
-    assert client.post(f"/rooms/{room_id}/history", json={"points": pts}, headers=KEY).status_code == 201
+    msgs = [{"device": device, "ts": iso(now - i * 300), "data": {"people": people}} for i in range(int(hours * 12) + 1)]
+    for i in range(0, len(msgs), 500):
+        assert client.post("/data", json=msgs[i:i + 500], headers=KEY).status_code == 201
 
 
-def test_seed_rooms_and_synthetic_history(client):
+def test_seed_rooms(client):
     rooms = {r["id"]: r for r in client.get("/rooms", headers=KEY).json()}
-    assert {"appleton", "forum", "personal"} <= set(rooms)
+    assert {"appleton", "forum", "personal"} <= set(rooms) and not any(i.startswith("aalborg") for i in rooms)
     a = rooms["appleton"]
-    assert a["device"] == "uno-q-1" and a["volume_m3"] == 65 and len(a["windows"]) == 2
-    assert a["history"]["points"] == 20160 and a["history"]["enough_for_forecast"]
-    assert rooms["forum"]["history"]["points"] == 0
+    assert a["device"] == "uno-q-1" and a["volume_m3"] == 65 and len(a["windows"]) == 2 and "model_from" not in a
 
 
 def test_room_crud_and_validation(client):
@@ -60,6 +59,7 @@ def test_room_crud_and_validation(client):
     up = client.put("/rooms/lab-zone-u-1", json={"capacity": 12, "device": "uno-q-9"}, headers=KEY).json()
     assert up["capacity"] == 12 and up["device"] == "uno-q-9" and up["name"] == "Lab Zone Ü 1"
     assert client.put("/rooms/lab-zone-u-1", json={"volume_m3": -1}, headers=KEY).status_code == 422
+    assert client.put("/rooms/lab-zone-u-1", json={"model_from": "aalborg-a"}, headers=KEY).status_code == 422
     assert client.delete("/rooms/lab-zone-u-1", headers=KEY).status_code == 200
     assert client.get("/rooms/lab-zone-u-1", headers=KEY).status_code == 404
 
@@ -76,21 +76,27 @@ def test_windows(client):
 
 def test_co2_reaches_mass_balance_steady_state(client):
     # V=500 m3, 2 ACH -> Q=1000 m3/h, time constant 30 min; 8 people * 16 L/h -> 420 + 128 ppm
-    make_room(client, id="co2-test", infiltration_ach=2.0)
-    flat_history(client, "co2-test", 8, 30)
-    pts = client.get("/rooms/co2-test/co2", headers=KEY).json()["points"]
-    assert abs(pts[-1]["co2_ppm"] - 548) <= 1
-    assert pts[-2]["people"] == 8 and pts[-2]["people_source"] == "history"  # last point: the future 5 min
+    make_room(client, id="co2-test", infiltration_ach=2.0, device="co2-board")
+    board_history(client, "co2-board", 8, 20)
+    r = client.get("/rooms/co2-test/co2", headers=KEY).json()
+    assert r["estimated"] and abs(r["points"][-2]["co2_ppm"] - 548) <= 1 and r["points"][-2]["people"] == 8
+    assert abs(r["now"]["co2_ppm"] - 548) <= 1 and r["now"]["people"] == 8 and r["now"]["airflow_m3h"] == 1000
 
-    # Opening the 1 m2 window adds 350 m3/h -> steady state 420 + 128 / 1.35
+    # Opening the 1 m2 window adds 350 m3/h
     client.put("/rooms/co2-test/windows", json={"open": [0]}, headers=KEY)
-    f = client.get("/rooms/co2-test/forecast", headers=KEY).json()
-    assert f["model"] == "persistence_no_history" and f["live_people"] == 8
-    assert abs(f["summary"]["co2_now"] - 548) <= 1 and f["summary"]["open_area_m2"] == 1.0
-    end = f["points"][-1]
-    assert abs(end["co2_ppm"] - (420 + 128 / 1.35)) <= 1
-    assert abs(end["co2_windows_closed"] - 548) <= 1
-    assert end["co2_windows_open"] == end["co2_ppm"]
+    assert client.get("/rooms/co2-test/co2", headers=KEY).json()["now"]["airflow_m3h"] == 1350
+
+
+def test_co2_counts_rooms_without_board_data_as_empty(client):
+    make_room(client, id="no-board")
+    r = client.get("/rooms/no-board/co2", headers=KEY).json()
+    assert r["now"]["co2_ppm"] == 420 and r["now"]["people"] is None
+    assert all(p["people"] is None and p["co2_ppm"] == 420 for p in r["points"])
+
+
+def test_live_rooms_have_no_forecast(client):
+    assert client.get("/rooms/appleton/forecast", headers=KEY).status_code in (404, 405)
+    assert client.get("/rooms/appleton/history", headers=KEY).status_code in (404, 405)
 
 
 def test_co2_matches_frontend_formula(client):
@@ -103,58 +109,17 @@ def test_co2_matches_frontend_formula(client):
     assert step_co2(1280, 8, room, q, dt) == pytest.approx(expected)
 
 
-def test_occupancy_prefers_sensor_over_history(client):
-    make_room(client, id="merge-test", device="merge-board")
-    flat_history(client, "merge-test", 3, 1)
-    client.post("/data", json={"device": "merge-board", "data": {"people": 11}}, headers=KEY)
-    pts = client.get(f"/rooms/merge-test/occupancy?from={iso(time.time() - 1800)}", headers=KEY).json()["points"]
-    assert pts[-1] == {"ts": pts[-1]["ts"], "people": 11.0, "source": "sensor"}
-    assert pts[0]["source"] == "history" and pts[0]["people"] == 3
-
-
-def test_forecast_uses_forecaster_and_weekday_override(client):
-    f = client.get("/rooms/appleton/forecast?as_weekday=wed", headers=KEY).json()
-    assert len(f["points"]) == 288 and f["model"].startswith("historical_time_of_week")
-    assert f["as_weekday"] == "wed"
-    sat = client.get("/rooms/appleton/forecast?as_weekday=saturday", headers=KEY).json()
-    assert statistics.mean(p["people"] for p in f["points"]) > 3 * statistics.mean(p["people"] for p in sat["points"])
-    assert all(0 <= p["people_lower"] <= p["people"] <= p["people_upper"] <= 32 for p in f["points"])
-    t0 = datetime.fromisoformat(f["points"][0]["ts"].replace("Z", "+00:00")).timestamp()
-    assert 0 < t0 - time.time() <= 300 and f["points"][1]["ts"] > f["points"][0]["ts"]
-    assert client.get("/rooms/appleton/forecast?hours=2", headers=KEY).json()["points"].__len__() == 24
-    assert client.get("/rooms/appleton/forecast?as_weekday=funday", headers=KEY).status_code == 422
-
-
-def test_forecast_live_anchor_fades(client):
-    client.put("/rooms/appleton", json={"device": "anchor-board"}, headers=KEY)
-    try:
-        base = client.get("/rooms/appleton/forecast?as_weekday=sat", headers=KEY).json()
-        client.post("/data", json={"device": "anchor-board", "data": {"people": 30}}, headers=KEY)
-        f = client.get("/rooms/appleton/forecast?as_weekday=sat", headers=KEY).json()
-        assert f["model"] == "historical_time_of_week+live_anchor" and f["live_people"] == 30
-        assert abs(f["points"][0]["people"] - 30) < 2  # starts at the live count
-        assert abs(f["points"][-1]["people"] - base["points"][-1]["people"]) < 0.5  # back to the pattern in 24 h
-    finally:
-        client.put("/rooms/appleton", json={"device": "uno-q-1"}, headers=KEY)
-
-
-def test_history_import_and_delete(client):
-    make_room(client, id="hist-test")
-    r = client.post("/rooms/hist-test/history", json={"source": "survey", "points": [
-        {"ts": "2026-11-02T09:00:00Z", "people": 4}, {"ts": "2026-11-02T09:05:00Z", "people": 6}]}, headers=KEY)
-    assert r.json() == {"stored": 2}
-    h = client.get("/rooms/hist-test/history?from=2026-11-02T00:00:00Z&to=2026-11-03T00:00:00Z", headers=KEY).json()
-    assert [p["people"] for p in h["points"]] == [4, 6] and h["points"][0]["source"] == "survey"
-    assert client.post("/rooms/hist-test/history", json={"points": [{"ts": "nope", "people": 1}]},
-                       headers=KEY).status_code == 422
-    assert client.delete("/rooms/hist-test/history?source=survey", headers=KEY).json() == {"deleted": 2}
+def test_occupancy_is_board_only(client):
+    make_room(client, id="occ-test", device="occ-board")
+    client.post("/data", json={"device": "occ-board", "data": {"people": 11}}, headers=KEY)
+    pts = client.get(f"/rooms/occ-test/occupancy?from={iso(time.time() - 1800)}", headers=KEY).json()["points"]
+    assert pts[-1]["people"] == 11.0 and pts[0]["people"] is None
 
 
 @pytest.mark.parametrize("method,path", [
     ("get", "/rooms"), ("post", "/rooms"), ("get", "/rooms/appleton"), ("put", "/rooms/appleton"),
-    ("delete", "/rooms/appleton"), ("put", "/rooms/appleton/windows"), ("get", "/rooms/appleton/history"),
-    ("post", "/rooms/appleton/history"), ("get", "/rooms/appleton/occupancy"), ("get", "/rooms/appleton/co2"),
-    ("get", "/rooms/appleton/forecast"),
+    ("delete", "/rooms/appleton"), ("put", "/rooms/appleton/windows"), ("get", "/rooms/appleton/occupancy"),
+    ("get", "/rooms/appleton/co2"),
 ])
 def test_rooms_auth_required(client, method, path):
     kwargs = {"json": {}} if method in ("post", "put") else {}

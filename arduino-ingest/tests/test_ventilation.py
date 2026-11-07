@@ -92,10 +92,18 @@ def test_advice_planned():
 
 
 def test_advice_ok_when_room_stays_fresh():
-    # 1 person for 2 hours (with only infiltration they'd pass 1000 ppm after ~3.4 h)
-    times, people = forecast([1] * 24)
+    # 1 person for 1 hour (with only infiltration they reach 800 after ~1.8 h and 1000 after ~3.4 h)
+    times, people = forecast([1] * 12)
     a = advice(450.0, ORIGIN, times, people, ROOM, Q_CLOSED, Q_OPEN)
     assert a["status"] == "ok" and a["open_window_in_min"] is None and a["flush_duration_min"] is None
+
+
+def test_advice_heads_up_without_trigger():
+    # 900 ppm now (mild drag) and the room empties: never reaches 1000
+    times, people = forecast([0] * 24)
+    a = advice(900.0, ORIGIN, times, people, ROOM, Q_CLOSED, Q_OPEN)
+    assert a["status"] == "heads_up" and a["heads_up_in_min"] == 0 and a["open_window_in_min"] is None
+    assert "mild drag" in a["message"]
 
 
 def test_advice_now_and_critical():

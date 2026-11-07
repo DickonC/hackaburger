@@ -114,6 +114,22 @@ A forecast looks like this:
 - `co2_ppm`, `co2_lower` and `co2_upper` keep the window as it was at the start.
 - `co2_windows_closed` and `co2_windows_open` assume the window stays closed or open.
 
+**Window advice (`summary.ventilation`):** when to open a window and for how long ([`ventilation.py`](../arduino-ingest/app/ventilation.py)).
+- The CO₂ mass balance `V dC/dt = 1000·G·N(t) − Q·(C − C_out)` is solved exactly over each 5-minute forecast step, so the forecast people curve `N(t)` is used as it changes. Each threshold crossing time comes from `t* = (V/Q)·ln((C₀ − C_ss)/(C_th − C_ss))`.
+- Thresholds: 800 ppm early heads-up, **1000 ppm "open a window"**, 1500 ppm critical (cross-ventilate). A flush opens all windows when 1000 is reached and lasts until CO₂ is back at **600 ppm**.
+- `status`: `ok`, `heads_up` (800–1000), `planned` (window needed later), `open_now`, `critical`, or `flushing` (window already open: `close_window_in_min` says when 600 is reached).
+- `open_window_in_min` / `open_window_at`: when CO₂ reaches 1000 with windows shut (`null` if not within the forecast). `open_window_range_min`: the same for the upper and lower people band (more people means sooner).
+- `flush_duration_min`: minutes with all windows open to get back to 600. It is `null` with `flush_reaches_target: false` and `lowest_reachable_ppm` when too many people stay for 600 to be reachable.
+- `message`: a ready-to-show sentence, e.g. "Open a window in 12 min for about 9 min to get back to 600 ppm."
+
+```json
+"ventilation": {"status": "planned", "co2_now": 640, "heads_up_in_min": 5.2, "open_window_in_min": 12.4,
+  "open_window_at": "...", "open_window_range_min": [9.8, 16.1], "critical_in_min": null,
+  "flush_duration_min": 8.7, "flush_reaches_target": true,
+  "thresholds_ppm": {"heads_up": 800, "open": 1000, "critical": 1500, "target": 600},
+  "message": "Open a window in 12 min for about 9 min to get back to 600 ppm."}
+```
+
 ## Frontend
 
 `index.html` (Room view) and `admin.html` (Ops console) load [`backend.js`](../backend.js), which connects the live rooms:

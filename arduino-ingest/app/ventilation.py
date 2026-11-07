@@ -141,7 +141,14 @@ def advice(c0: float, origin: float, times: list[float], people: list[float], ro
     else:
         out["flush_duration_min"] = None
 
-    if open_at is None:
+    if open_at is None and heads_up is not None:
+        # Mild drag (800-1000) now or soon, but the forecast doesn't reach the 1000 trigger
+        out["status"] = "heads_up"
+        out["message"] = (f"CO2 is {c0:.0f} ppm (mild drag), but stays below {OPEN_PPM:.0f} ppm: no window needed yet."
+                          if heads_up == origin else
+                          f"CO2 reaches {HEADS_UP_PPM:.0f} ppm in {_minutes(heads_up, origin):.0f} min, "
+                          f"but stays below {OPEN_PPM:.0f} ppm: no window needed yet.")
+    elif open_at is None:
         out["status"] = "ok"
         out["message"] = f"No window needed: CO2 stays below {OPEN_PPM:.0f} ppm in the forecast."
     elif open_at == origin:

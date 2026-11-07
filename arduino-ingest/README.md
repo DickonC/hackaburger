@@ -15,17 +15,19 @@ Public base URL: `https://hackaburger.cch-uk.tech/ingest/`. Every endpoint excep
 | GET / PUT | `/ingest/config/{device}` | Read or change a board's settings (`{"preset": "demo"}` works too) |
 | GET | `/ingest/occupancy/latest?device=` | Current count, smoothed count and online status |
 | GET | `/ingest/occupancy/history?device=&from=&to=&step_s=&threshold_dbm=` | Time series, optionally recounted at another range |
-| GET/POST/PUT/DELETE | `/ingest/rooms[/{id}]` | Rooms: volume, windows, capacity, which board is in them |
+| GET/POST/PUT/DELETE | `/ingest/rooms[/{id}]` | Live rooms: volume, windows, capacity, which board is in them |
 | PUT | `/ingest/rooms/{id}/windows` | Which windows are open |
-| GET/POST/DELETE | `/ingest/rooms/{id}/history` | Historic people counts, plus measured CO₂ where available (the Aalborg dataset rooms) |
-| GET | `/ingest/rooms/{id}/occupancy`, `/co2`, `/forecast` | People (board + history), estimated CO₂, 24 h people + CO₂ forecast |
+| GET | `/ingest/rooms/{id}/occupancy`, `/co2` | The board's count and estimated CO₂ (live; no forecast) |
+| GET | `/ingest/dataset/rooms[/{id}]`, `/history`, `/forecast` | Forecasting on the Aalborg office dataset: 24 h from now, or `?at=` replay vs what happened |
 | GET | `/ingest/health`, `/ingest/docs` | Health check and interactive API docs |
 
 ## On the server
 
 Runs as the Docker container `hackaburger-ingest` on `127.0.0.1:8094`. The SQLite database is in `data/` and the API key is in `.env`. Neither is in git.
 The image is built from the repo root, because it includes `occupancy_forecaster/occupancy_core.py`, `rolling_24h.py` and `aalborg.py` (see `Dockerfile.dockerignore`).
-On the first start with an empty `rooms` table, it creates the frontend's three preset rooms. To load the historic data and train the models, run once: `docker exec hackaburger-ingest python -m app.dataset`. This uses the Aalborg office dataset, doi:10.5281/zenodo.10673763, CC BY 4.0; see [`docs/backend-api.md`](../docs/backend-api.md). The downloaded data and trained models are stored in `data/datasets/` and `data/models/`.
+On the first start with an empty `rooms` table, it creates the frontend's three preset rooms.
+
+Forecasting is separate from the live boards (tables `dataset_rooms` and `dataset_occupancy`). To load the Aalborg office dataset (doi:10.5281/zenodo.10673763, CC BY 4.0) and train the models, run once: `docker exec hackaburger-ingest python -m app.dataset`. The downloaded data and trained models are stored in `data/datasets/` and `data/models/`. See [`docs/backend-api.md`](../docs/backend-api.md).
 
 ```bash
 cd ~/hackaburger/arduino-ingest
@@ -45,4 +47,4 @@ Table `readings` holds one row per message:
 
 Table `configs` holds one JSON config per board. `uno-q-1` starts in room mode and `uno-q-2` in demo mode.
 
-Tables `rooms`, `occupancy_history` and `window_events` are described in [`docs/backend-api.md`](../docs/backend-api.md).
+Tables `rooms`, `window_events`, `dataset_rooms` and `dataset_occupancy` are described in [`docs/backend-api.md`](../docs/backend-api.md).

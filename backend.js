@@ -270,18 +270,17 @@
     if (!room) { live.mode = 'sim'; renderBadge(); return; }
     const now = Date.now();
     const from = new Date(now - 2 * 3600 * 1000).toISOString();
-    const weekday = localStorage.getItem('hackaburger_weekday');
-    // as_weekday only works for rooms with enough history for the forecaster
-    const useWeekday = weekday && room.history && room.history.enough_for_forecast;
-    const fq = `/rooms/${encodeURIComponent(roomId)}/forecast?hours=24${useWeekday ? `&as_weekday=${weekday}` : ''}`;
     try {
-      const [forecast, pastCo2, pastOcc, latest] = await Promise.all([
-        api(fq),
+      // Live rooms have no server forecast (forecasting runs on the dataset rooms, /dataset/...):
+      // the "now" values come from the CO2 estimate, and the future comes from the page's own engine.
+      const [pastCo2, pastOcc, latest] = await Promise.all([
         api(`/rooms/${encodeURIComponent(roomId)}/co2?from=${from}&step_s=900`),
         api(`/rooms/${encodeURIComponent(roomId)}/occupancy?from=${from}&step_s=900`),
         room.device ? api(`/data?device=${encodeURIComponent(room.device)}&limit=1`) : [],
       ]);
       const board = latest.length ? await api(`/occupancy/latest?device=${encodeURIComponent(room.device)}`) : null;
+      const forecast = { live_people: pastCo2.now.people, model: 'live_board', points: [],
+                         summary: { co2_now: pastCo2.now.co2_ppm, first_above_1000_at: null } };
       if (STATE.currentRoomId !== roomId) return; // switched while loading
       Object.assign(live, { forecast, pastCo2: pastCo2.points, pastOcc: pastOcc.points, board, error: null, lastUpdate: Date.now() });
       const devices = (latest[0] && latest[0].data && latest[0].data.devices) || [];
@@ -291,8 +290,7 @@
         live.deviceCursor = 0;
       }
       const hasBoard = forecast.live_people !== null && board && board.online;
-      const hasModel = forecast.model !== 'persistence_no_history';
-      live.mode = live.forceSim ? 'sim' : hasBoard ? 'live' : hasModel ? 'model' : 'sim';
+      live.mode = live.forceSim ? 'sim' : hasBoard ? 'live' : 'sim';
       if (live.mode !== 'sim') applyLiveState();
     } catch (e) {
       if (e.status === 401) {
@@ -406,6 +404,19 @@
       return origBuild ? origBuild() : (origCaelumBuild ? origCaelumBuild.call(Caelum) : null);
     }
     const f = live.forecast;
+    if (!f.points.length) {
+      // No server forecast: the engine projects forward from the live state; show the server's past
+      const series = origBuild ? origBuild() : (origCaelumBuild ? origCaelumBuild.call(Caelum) : null);
+      if (series) {
+        const past = live.pastCo2.slice(-9).map(p => p.co2_ppm);
+        while (past.length < 9) past.unshift(null);
+        past[8] = f.summary.co2_now;
+        series.pastSeries = [...past, ...Array(9).fill(null)];
+        series.groundTruthSeries = Array(18).fill(null); // no CO2 sensor
+      }
+      updateOccupancyChart();
+      return series;
+    }
     const pick = key => FUTURE_MIN.map(min => {
       const p = f.points[Math.min(f.points.length - 1, Math.round(min / 5) - 1)];
       return p ? p[key] : null;

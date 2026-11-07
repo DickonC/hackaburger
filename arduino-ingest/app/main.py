@@ -20,7 +20,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import rooms
+from app import forecast, rooms
 from app.core import (API_KEY, bucket_people, check_device, count, db, is_number, iso, parse_time,
                       require_key, round_half_up, time_range)
 
@@ -156,11 +156,13 @@ async def lifespan(app: FastAPI):
         conn.execute("PRAGMA journal_mode=WAL")
         migrate(conn)
         rooms.migrate(conn)
+        forecast.migrate(conn)
     yield
 
 
 app = FastAPI(title="hackaburger arduino-ingest", lifespan=lifespan)
 app.include_router(rooms.router)
+app.include_router(forecast.router)
 # The frontend may be opened from anywhere (file://, localhost); every call still needs X-API-Key
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 

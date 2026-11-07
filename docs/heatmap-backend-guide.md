@@ -1,14 +1,16 @@
-# Task brief: room heatmap and people estimate (backend)
+# Task brief: room heatmap and board control (backend)
 
 > **For an AI coding agent with access to the Hackaburger server.** Read this whole file before changing code.
 > The board message format is in [`server-api.md`](server-api.md). The existing ingest and config work is in [`server-agent-brief.md`](server-agent-brief.md).
-> This file adds: combining four boards into one room view, filtering out devices outside the room, a smooth heatmap, and a people estimate.
+> This file covers two things: **(1) controlling the boards** from the server, and **(2) the room heatmap**, which combines four boards, filters out devices outside the room, and gives a people estimate.
+>
+> **Most of the backend already exists.** Fit this into the existing code and reuse existing endpoints and storage where they already do the job. Don't rebuild what works. The CO₂ model is out of scope here; this guide only provides its people input.
 
 ## Goal
 
 Four Arduino UNO Q boards sit in the four corners of one room. From their Bluetooth scans, the server produces every few seconds:
 
-1. **`people_estimate`:** how many people are in the room. **This is the most important value**, and it feeds the webapp and the CO₂ model.
+1. **`people_estimate`:** how many people are in the room. **This is the most important value**, and it's what the existing CO₂ model should use as its people input.
 2. **A smooth heatmap** of where people are in the room.
 3. **A debug view** of every device heard, showing whether it counted and, if not, which filter rejected it.
 
@@ -20,25 +22,52 @@ Four Arduino UNO Q boards sit in the four corners of one room. From their Blueto
 - **`GET`/`PUT /ingest/config/{device}`:** per-board settings.
 - **Auth:** header `X-API-Key` on every request.
 
-## Facts about the incoming data you can rely on
+## Controlling the boards
 
-- **Board names:** `uno-q-1` … `uno-q-4`. Each board shows its number as dots on its LED, so people can tell them apart when placing them.
+The boards can't be reached from the server, because eduroam blocks incoming connections. **All control works through the reply to each board's `POST /ingest/data`:** the server returns that board's full `config`, and the board applies it immediately. So the server only has to store the desired settings per board. They take effect at each board's **next POST**.
+
+### Board settings (`/ingest/config/{device}`)
+
+The existing fields, plus one new one, `send_every_s`:
+
+| Field | Default | Allowed | What it does on the board |
+|---|---|---|---|
+| `enabled` | true | | `false` = the board keeps checking in but sends no device data (a pause). |
+| `threshold_dbm` | −75 | −100 … −30 | **LED range:** only the number on the board's LED. It doesn't affect the heatmap. |
+| `window_s` | 30 | 2 … 300 | How long a device stays in the board's list after it was last heard. |
+| `interval_s` | 5 | 1 … 600 | How often the board measures and updates its LED, on clock boundaries (10 → :00, :10, :20…). |
+| `send_every_s` **(new)** | 300 | 0 … 3600 | How often the board POSTs, on clock boundaries. `0` = every `interval_s`. |
+| `people_factor` | 0.7 | 0.1 … 2.0 | Only used for the board's own `people` field. |
+| `send_devices` | true | | Must stay `true` for the heatmap. |
+| `display` | true | | LED display on or off. |
+| `config_version` | | | Server-managed: +1 on every change. |
+
+**What the board does with these settings:**
+- Clamps out-of-range values, ignores unknown fields and keeps missing fields at their current value.
+- Saves the last config, so it survives a reboot.
+- Queues messages while offline and resends them later.
+
+**How long a change takes to reach a board:** up to one `send_every_s`. In **dev mode** (300) that's up to 5 minutes, and in **live mode** (0, every 10 s) it's up to 10 s.
+
+**Applied or pending:**
+- Every board message contains `data.config_version`, the version the board was running when it measured.
+- Compare it with the stored version: if the board's version is lower than the server's, the change is **pending**. Otherwise it's **applied**.
+- Expose this per board (see `boards` in `/heatmap/latest`), so the webapp can show "LED range −60 applied" or "waiting for board 3".
+
+### Modes and bulk changes
+
+- **`PUT /heatmap/mode {"mode": "live" | "dev"}`** sets all four boards at once:
+  - **live:** `send_every_s: 0, interval_s: 10, window_s: 20`. **Required for the heatmap.**
+  - **dev:** `send_every_s: 300`, with `interval_s` and `window_s` unchanged.
+- **`PUT /heatmap/boards {…partial config…}`** applies the same fields to all four boards, e.g. `{"threshold_dbm": -60}` for the LED range. Use the same validation as `/ingest/config/{device}`.
+- **Rule for the heatmap:** all four boards **must** have the same `interval_s` and `window_s`. Otherwise their `ts` values don't line up. `PUT /heatmap/boards` keeps this rule automatically. Reject per-board changes to `interval_s` or `window_s` with `422`, unless they're applied to all four boards.
+
+### Facts about the incoming data
+
+- **Board names:** `uno-q-1` … `uno-q-4`. Each board shows its number as dots (1–4) at the top left of its LED, so people can tell them apart when placing them.
 - **`devices`:** every device the board heard in its last `window_s` seconds, **unfiltered**. Each entry has `id` (anonymised, **identical on all boards for the same phone**), `rssi` (median dBm in that window, where closer to 0 means closer) and `n` (number of hits).
 - **`ts` is aligned to the clock.** It's always a whole multiple of `interval_s` (e.g. `…:20:00`, `…:20:10`), and the boards are internet time-synced. So the four boards' messages for the same moment carry the **identical `ts`**. Join on `ts`.
-- **Board settings for the heatmap:** all four boards use the same `interval_s` (10) and `window_s` (20).
 - **Address rotation:** phones change their Bluetooth address about every 15 minutes, so a phone gets a new `id`. That's fine. Never try to link ids over time.
-
-## Required change to the board config: `send_every_s`
-
-Add this field to the per-board config (validated like the others, and included in every `POST /ingest/data` reply):
-
-| Field | Type | Default | Allowed | Meaning |
-|---|---|---|---|---|
-| `send_every_s` | int | 300 | 0 … 3600 | Seconds between board POSTs, on clock boundaries. `0` = send at every `interval_s`. |
-
-- **Dev mode (default):** `send_every_s: 300`, so one message per board every 5 minutes.
-- **Live mode (needed for the heatmap):** `send_every_s: 0, interval_s: 10, window_s: 20` on **all four boards**, so one message per board every 10 s.
-- Add `PUT /heatmap/mode` with `{"mode": "live" | "dev"}` that applies these values to all four boards' configs in one call. The boards pick it up at their next POST, which takes at most 5 minutes when switching from dev mode.
 
 ---
 
@@ -168,7 +197,8 @@ people_smoothed = round(median(people_estimate over snapshots in the last smooth
   "devices_heard": 312,
   "funnel": { "heard": 312, "enough_boards": 141, "inside_edge": 38, "present": 33 },
   "boards": {
-    "uno-q-1": { "corner": "top_left", "x": 0.5, "y": 0.5, "online": true, "last_ts": "2026-11-07T21:30:10Z", "heard": 201 },
+    "uno-q-1": { "corner": "top_left", "x": 0.5, "y": 0.5, "online": true, "last_ts": "2026-11-07T21:30:10Z", "heard": 201,
+                 "config": { "version": 5, "applied_version": 5, "pending": false, "threshold_dbm": -75, "send_every_s": 0, "interval_s": 10 } },
     "uno-q-2": { "corner": "top_right", "x": 7.5, "y": 0.5, "online": true, "last_ts": "2026-11-07T21:30:10Z", "heard": 188 },
     "uno-q-3": { "corner": "bottom_right", "x": 7.5, "y": 5.5, "online": true, "last_ts": "2026-11-07T21:30:10Z", "heard": 176 },
     "uno-q-4": { "corner": "bottom_left", "x": 0.5, "y": 5.5, "online": false, "last_ts": "2026-11-07T21:25:00Z", "heard": 0 }
@@ -183,6 +213,7 @@ people_smoothed = round(median(people_estimate over snapshots in the last smooth
 
 - `values` is row-major: `values[row][col]`, where row 0 is the top wall.
 - A board is `online` if its last message is no older than `3 × its send interval + 15 s`.
+- `boards[*].config` shows the board's current settings, and whether the latest change is still `pending` (`applied_version` < `version`). The other boards have the same `config` object; the example only shows it for board 1.
 - Add a warning when `mode` is `dev`, because the snapshot is then up to 5 minutes old.
 
 ### `GET /heatmap/debug[?ts=…]`, every device in a snapshot (default: the latest)
@@ -245,16 +276,13 @@ This assumes that over many devices, people aren't all crowded around one board.
 
 `POST /heatmap/calibrate/headcount {"people": n}`, as described under "People estimate", is the only manual calibration. Someone counts the people once, and nobody has to walk anywhere.
 
-## CO₂ model input
+## Hand-off to the CO₂ model
 
-There's **no CO₂ sensor**. The CO₂ model *simulates* the room's CO₂ from the number of people. For the hackathon it is fed by **recorded occupancy (historical data)**, not by live measurements:
+The CO₂ model already exists and is the backend teammate's own work. This guide doesn't change it. Just give it the room's people count:
+- **Live:** `people_smoothed` from `/heatmap/latest`.
+- **History:** `GET /heatmap/history`, with one people value per time step.
 
-- **Store the people estimate permanently,** one value per snapshot. Unlike per-device debug data, it's anonymous, so keep it.
-- **`GET /heatmap/history?from=…&to=…&step_s=60`** (above) gives the model a people time series to simulate and predict from.
-- **Optionally, `GET /heatmap/profile?weekday=…&step_s=900`:** the average people count per time of day across all recorded days. It's handy for "typical Tuesday" predictions.
-- **To show the CO₂ model working before much data exists,** allow importing a recorded or synthetic series via `POST /heatmap/history/import [{"ts", "people"}]`, marked as `"source": "import"`.
-
-In a real deployment, the model would combine measured data with predictions from old data. That's out of scope here: the team decided to use old data only.
+Store the people estimate permanently. It's anonymous.
 
 ## Two thresholds: don't mix them up
 
@@ -283,7 +311,9 @@ In a real deployment, the model would combine measured data with predictions fro
 7. **One board offline:** with `min_boards = 3`, the snapshot still works, and `warnings` mentions it.
 8. **Grid total:** the sum of all `heatmap.values` ≈ `people_estimate` (±10 %, before time smoothing; Gaussians near the walls are clipped).
 9. **Mode switch:** `PUT /heatmap/mode {"mode": "live"}` sets `send_every_s: 0, interval_s: 10, window_s: 20` on all four board configs, and increments their `config_version`.
-10. **Auth:** all new endpoints return `401` without a valid `X-API-Key`.
+10. **Bulk LED range:** `PUT /heatmap/boards {"threshold_dbm": -60}` raises `config_version` on all four boards. Each board shows `pending: true` until a message arrives with the new version, then `pending: false`.
+11. **Heatmap rule:** `PUT /ingest/config/uno-q-2 {"interval_s": 5}` on its own → `422`. The same value via `PUT /heatmap/boards` → `200`, for all four boards.
+12. **Auth:** all new endpoints return `401` without a valid `X-API-Key`.
 
 ## Quick start (what the team does on the day)
 

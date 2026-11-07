@@ -1,6 +1,6 @@
 # Heatmap webapp: what the frontend needs
 
-Short guide for building the room view. All data comes from the backend described in [`heatmap-backend-guide.md`](heatmap-backend-guide.md). Exact JSON is there.
+Short guide for the **room heatmap view** and the **board controls**. All data comes from the backend described in [`heatmap-backend-guide.md`](heatmap-backend-guide.md), where the exact JSON is. Most of the webapp already exists, so add these views to it rather than starting over.
 
 ## The setup in one picture
 
@@ -38,20 +38,40 @@ Short guide for building the room view. All data comes from the backend describe
 
 Poll `GET /heatmap/latest` every **5 s** in live mode and every **60 s** in dev mode.
 
-**CO₂ view:** the CO₂ model is simulated from recorded people counts, not a sensor. Get its input from `GET /heatmap/history` (see the backend guide, "CO₂ model input").
-
 ## Controls
 
 | Control | Calls | Explain to the user as |
 |---|---|---|
 | Room width / length (m) | `PUT /heatmap/config {"room": {"width_m", "length_m"}}` | "Measure the walls between the boards." |
 | **Room edge**: an **Auto** toggle (default on) plus a slider, −100 … −40 dBm | Auto: `PUT /heatmap/config {"filter": {"edge_mode": "auto"}}`. Moving the slider sends `{"filter": {"edge_mode": "manual", "edge_dbm": v}}` | "Which devices count as *inside* the room. **Auto** works it out from the room size. Move left to include weaker, farther signals, but you may start counting people outside. Move right to be stricter, but you may miss people in the corners. Affects the heatmap and the people count immediately." In auto mode, show the slider at the current `calibration.edge_dbm`. |
-| **LED range** slider, −100 … −30 dBm (default −75) | `PUT /ingest/config/{board} {"threshold_dbm"}` for all 4 boards | "Only changes the number on the boards' LED displays. Doesn't affect the heatmap or the people count. Reaches the boards at their next update." |
+| **LED range** slider, −100 … −30 dBm (default −75) | `PUT /heatmap/boards {"threshold_dbm"}`, which sets all 4 boards | "Only changes the number on the boards' LED displays. Doesn't affect the heatmap or the people count. Reaches the boards at their next update." |
 | Mode: **Live (10 s)** / **Dev (5 min)** | `PUT /heatmap/mode {"mode": "live" \| "dev"}` | "Live is needed for the heatmap. Switching from dev can take up to 5 min to reach the boards." |
 | **Devices per person** (default 1.4) | `PUT /heatmap/config {"people": {"devices_per_person"}}` | "People carry phones, watches and earbuds. On average, how many devices per person?" |
 | **"Calibrate with headcount"** button: the user types the real number of people | `POST /heatmap/calibrate/headcount {"people": n}` | "Count the people in the room once. The app adjusts devices per person to match." |
 
 Keep the room-edge and LED-range controls clearly apart. They are **two different thresholds**, and mixing them up is the most likely source of confusion.
+
+## Board control panel
+
+The boards can't be contacted directly. Every setting is stored on the server, and each board picks it up **at its next message**: within 10 s in live mode, but up to 5 minutes in dev mode. The panel must make that visible, so nobody thinks a setting "didn't work".
+
+Data comes from `boards` in `GET /heatmap/latest`. Show one row or card per board, in corner order 1 → 4:
+
+| Show | From |
+|---|---|
+| Board number as dots (●, ●●, ●●●, ●●●●) and its corner | `corner` |
+| Online / offline, and last seen | `online`, `last_ts` |
+| Devices it hears | `heard` |
+| Current LED range and send mode | `config.threshold_dbm`, `config.send_every_s` (0 = live) |
+| **Applied ✓ / pending ⏳** for the latest change | `config.pending` |
+
+**Controls for all boards at once.** The heatmap needs all four boards on the same timing, so keep these global:
+- **Live / Dev** switch → `PUT /heatmap/mode`.
+- **LED range** slider → `PUT /heatmap/boards {"threshold_dbm"}`.
+- **Pause / resume** sending → `PUT /heatmap/boards {"enabled": false | true}`.
+- **LED display on/off** → `PUT /heatmap/boards {"display": false | true}`.
+
+After any change, show "pending" per board until it flips to "applied". In dev mode, add a hint: "Takes up to 5 min. Switch to Live for instant changes."
 
 ## Advanced view: all devices and what was filtered out
 

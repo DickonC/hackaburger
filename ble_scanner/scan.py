@@ -214,9 +214,19 @@ async def main():
                   f"(of {len(heard)} heard, threshold {cfg['threshold_dbm']} dBm) "
                   f"-> ~{people} people{state}")
             if args.verbose:
-                for addr, rssi, n in in_range:
-                    print(f"   {rssi:6.1f} dBm  n={n:<3} {scanner.kinds.get(addr, '?'):<12} "
-                          f"{addr}  {scanner.names.get(addr, '-')}")
+                # Every device within range, including the ones left out of the count,
+                # so you can check the categories against devices you know.
+                kinds = {}
+                for addr, rssi, n in heard:
+                    if rssi < cfg["threshold_dbm"]:
+                        continue
+                    kind = scanner.kinds.get(addr, "unknown")
+                    kinds[kind] = kinds.get(kind, 0) + 1
+                    mark = "  [not counted]" if kind in EXCLUDED_KINDS else ""
+                    print(f"   {rssi:6.1f} dBm  n={n:<3} {kind:<12} {addr}  "
+                          f"{scanner.names.get(addr, '-')}{mark}")
+                print("   by kind: " + ", ".join(f"{k} {v}" for k, v in
+                                                 sorted(kinds.items(), key=lambda kv: -kv[1])))
 
             if display and cfg["display"]:
                 display.show_count(len(in_range) if cfg["enabled"] else 0, board_number)

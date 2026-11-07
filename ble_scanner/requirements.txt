@@ -1,0 +1,2 @@
+bleak>=0.22
+msgpack>=1.0

@@ -4,7 +4,7 @@
 - **Main Challenge Prompt:** "Make the invisible visible. Choose something that's hard to observe. Build tools to collect your own data, or dig into public data. Show us what data is hidden, how we can find it, and what we can do with it."
 - **Optional Track Added:** **HRT "Best Use of Data for Predictions & Decision Making"** track.
 - **The Hook:** Carbon dioxide (CO2) is literally an invisible, odorless gas that builds up rapidly in enclosed study pods, bedrooms, and meeting rooms (climbing from 420 ppm to 1,500–2,500+ ppm in under 90 minutes). Humans have no sensory receptors for CO2; instead, elevated CO2 causes mild hypercapnia and cerebral vasodilation, which people misattribute to "afternoon brain fog," burnout, or caffeine deficiency.
-- **The Solution:** A hardware-free **"Virtual CO2 Sensor" & Occupancy Prediction Engine**. By combining Bluetooth Low Energy (BLE) alternative data sniffing with historical machine learning models and a transient mass-balance physics engine, we map real-time and forecasted CO2 buildup without physical gas sensors, translate it into a live **Cognitive Performance Index (%)**, and trigger proactive window-ventilation and calendar-scheduling interventions.
+- **The Solution:** A **"Virtual CO2 Sensor" & Occupancy Prediction Engine** that needs no CO2 sensors (only cheap, reusable BLE scanners). By combining Bluetooth Low Energy (BLE) alternative data sniffing with historical machine learning models and a transient mass-balance physics engine, we map real-time and forecasted CO2 buildup without any physical gas sensors, translate it into a live **Cognitive Performance Index (%)**, and trigger proactive window-ventilation and calendar-scheduling interventions.
 
 ---
 
@@ -41,7 +41,7 @@ Convert `C(t)` into executive function degradation metrics ("Environmental Cogni
 
 ### Key Business & Technical Assumptions
 1. **Tenant-Controlled Ventilation:** Over 80% of European and UK commercial properties (leased office floors, older university buildings, modular glass huddle pods) either lack per-room Demand-Controlled Ventilation (DCV) or give tenants zero API control over central HVAC systems. Meanwhile, modern energy-efficient glazing seals buildings tightly. Therefore, background air leakage with closed windows is modeled as a steady baseline rate ($0.2 - 0.4\text{ ACH}$), and our optimization targets the two levers teams actually control: **manual window airflow** and **room scheduling**.
-2. **Zero-CapEx B2B Deployment:** Commercial tenants leasing office space will not pay thousands in CapEx to wire, mount, and later de-install hardware NDIR CO2 sensors across dozens of rooms. Virtual Sensors provide immediate, zero-hardware scalability, plus a standalone personal mode for individual study rooms/bedrooms.
+2. **Zero-CapEx B2B Deployment:** Commercial tenants leasing office space will not pay thousands in CapEx to wire, mount, and later de-install hardware NDIR CO2 sensors across dozens of rooms. Virtual Sensors provide immediate, scalability with no per-room CO2 sensors (just a reusable BLE scanner per area), plus a standalone personal mode for individual study rooms/bedrooms.
 
 ---
 

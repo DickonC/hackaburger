@@ -444,10 +444,14 @@
       return p ? Math.round(p.people) : null;
     });
     const STATE = getState();
-    const data = [...past, STATE.occupancy, ...fut];
+    const actual = [...past, STATE.occupancy, ...fut.map(() => null)];
+    const predicted = [...past.map(() => null), STATE.occupancy, ...fut];
     if (occ.data && occ.data.datasets && occ.data.datasets[1]) {
-      occ.data.datasets[1].data = data;
-      occ.options.scales.y.max = Math.max(20, Math.ceil(Math.max(...data.filter(v => v !== null), STATE.scheduledCount) * 1.2 / 5) * 5);
+      occ.data.datasets[1].data = actual;
+      if (occ.data.datasets[2]) occ.data.datasets[2].data = predicted;
+      const nums = actual.concat(predicted).filter(v => v !== null);
+      const peak = Math.max(...nums, STATE.scheduledCount || 0);
+      occ.options.scales.y.max = Math.max(12, Math.ceil((peak + 1) / 5) * 5);
       occ.update('none');
     }
   }
@@ -569,9 +573,10 @@
   function renderBadge() {
     if (!badge) {
       badge = document.createElement('div');
-      badge.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:9999;max-width:calc(100vw - 24px);'
-        + 'font:11px "IBM Plex Mono",monospace;background:#111317;color:#F3F4F6;border:1px solid #22262F;'
-        + 'border-radius:6px;padding:6px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 4px 18px rgba(0,0,0,.5)';
+      badge.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:40;max-width:calc(100vw - 24px);'
+        + 'font:600 12px/1.3 "JetBrains Mono",ui-monospace,monospace;background:rgba(255,255,255,.94);color:#0F172A;border:1px solid #E2E8F0;'
+        + 'border-radius:999px;padding:8px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
+        + 'box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px -12px rgba(15,23,42,.18)';
       document.body.appendChild(badge);
       badge.addEventListener('click', e => {
         const action = e.target.dataset.action;
@@ -591,7 +596,7 @@
     }
     const STATE = getState();
     const room = STATE ? live.serverRooms[STATE.currentRoomId] : null;
-    const colours = { live: '#2DD4BF', model: '#60A5FA', sim: '#FBBF24' };
+    const colours = { live: '#22C55E', model: '#0EA5E9', sim: '#F59E0B' };
     let text;
     if (!live.enabled) {
       text = live.error ? `Backend unavailable (${live.error}) · simulation` : 'Offline simulation';
@@ -603,11 +608,11 @@
       text = live.forceSim ? 'SIMULATION (switched manually)' : live.error ? `SIMULATION · ${live.error}` : 'SIMULATION · no data for this room';
     }
     const ago = live.lastUpdate ? `${Math.round((Date.now() - live.lastUpdate) / 1000)}s ago` : '';
-    const btn = (action, label) => `<button data-action="${action}" style="all:unset;cursor:pointer;color:#9CA3AF;text-decoration:underline">${label}</button>`;
+    const btn = (action, label) => `<button data-action="${action}" style="all:unset;cursor:pointer;color:#0369A1;font-weight:600">${label}</button>`;
     const weekday = localStorage.getItem('hackaburger_weekday');
-    badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${live.enabled ? colours[live.mode] : '#F87171'}"></span>`
+    badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${live.enabled ? colours[live.mode] : '#EF4444'}"></span>`
       + `<span>${text}</span>`
-      + (live.enabled && live.mode !== 'sim' && ago ? `<span style="color:#6B7280">${ago}</span>` : '')
+      + (live.enabled && live.mode !== 'sim' && ago ? `<span style="color:#64748B">${ago}</span>` : '')
       + (live.enabled ? btn('toggle', live.forceSim ? 'use server data' : 'simulate') : btn('connect', 'connect'))
       + (live.enabled && live.mode !== 'sim' ? btn('weekday', weekday ? `pattern: ${weekday} (reset)` : 'use weekday pattern') : '');
 
@@ -630,12 +635,12 @@
   function showToast(msg, isError) {
     if (!toastEl) {
       toastEl = document.createElement('div');
-      toastEl.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999;max-width:min(420px,calc(100vw - 24px));'
-        + 'font:12px "IBM Plex Mono",monospace;background:#111317;border:1px solid #22262F;border-radius:6px;padding:10px 12px;'
-        + 'box-shadow:0 4px 18px rgba(0,0,0,.5);transition:opacity .3s';
+      toastEl.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:40;max-width:min(420px,calc(100vw - 24px));'
+        + 'font:500 13px/1.4 "General Sans",system-ui,sans-serif;background:#fff;border:1px solid #E2E8F0;border-radius:14px;padding:12px 14px;'
+        + 'box-shadow:0 8px 24px -12px rgba(15,23,42,.28);transition:opacity .3s';
       document.body.appendChild(toastEl);
     }
-    toastEl.style.color = isError ? '#F87171' : '#F3F4F6';
+    toastEl.style.color = isError ? '#B91C1C' : '#0F172A';
     toastEl.textContent = msg;
     toastEl.style.opacity = '1';
     clearTimeout(toastEl._t);

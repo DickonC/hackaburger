@@ -70,17 +70,20 @@ To serve both regular patrons and facility operators, the frontend follows a **D
 - **Text Primary:** `#0F172A` (Slate 900)
 - **Text Muted:** `#64748B` (Slate 500)
 
-#### B. Admin & Engineering Console (Obsidian Precision)
-- **Base Canvas:** `#0A0B0D`
-- **Surface Panels:** `#111317`
-- **Elevated Controls:** `#171A20`
-- **Precision Border:** `#22262F` (with `border-top: 1px solid rgba(255, 255, 255, 0.08)`)
-- **Telemetry Teal (Optimal):** `#2DD4BF`
-- **Telemetry Ice (Forecast):** `#60A5FA`
-- **Warning Threshold:** `#FBBF24`
-- **Critical Alert / Disconnect:** `#F87171`
-- **Text Primary:** `#F3F4F6`
-- **Text Code / Muted:** `#9CA3AF`
+#### B. Admin & Engineering Console (same family as the room view)
+The ops console keeps a denser layout, but it uses the consumer palette so the two windows read as one product. Status text uses the darker ink step of each hue so small labels stay readable on white.
+
+- **Page:** `#F8FAFC`, with the same fresh and sky washes as the room view
+- **Cards:** `rgba(255, 255, 255, 0.94)`, radius 16px, soft slate shadow
+- **Wells / recessed strips:** `#F1F5F9`
+- **Controls on cards:** `#F8FAFC`
+- **Border:** `#E2E8F0`
+- **Optimal / fresh:** `#15803D` text, `#22C55E` status rail and chart path
+- **Forecast / sky:** `#0369A1` text, `#0EA5E9` chart line
+- **Warning:** `#B45309` text, `#F59E0B` status rail
+- **Critical:** `#B91C1C` text, `#EF4444` status rail
+- **Text Primary:** `#0F172A`
+- **Text Secondary / Muted:** `#334155` / `#475569`
 
 ---
 
@@ -196,7 +199,7 @@ The two personas are now separate pages sharing one engine:
 | File | Persona | Notes |
 | :--- | :--- | :--- |
 | **`index.html`** | Consumer **Room view** (§3.2A palette, §5.1 layout) | Header with room switcher + SIMULATED badge, hero headline mapped from CO₂, Crowd / Focus / Next-action cards, 4-hour forecast with "Best time to book", today's schedule with the auto flush buffer. Light theme, responsive to phone width. |
-| **`admin.html`** | **Ops console** (§3.2B palette, §5.2 layout) | The dark dashboard (all panels, Arduino fleet, BLE log, sandbox) plus the Demo control group. |
+| **`admin.html`** | **Ops console** (§3.2B palette, §5.2 layout) | Same light Caelum palette as the room view, denser panels (Arduino fleet, BLE log, sandbox) plus the Demo control group. |
 | **`js/engine.js`** | n/a | `window.Caelum`: STATE, mass-balance + COGfx models, `minutesUntil()`, forecast, sim clock, demo modes, `BroadcastChannel('caelum')` sync. Pure logic, no DOM. |
 | **`Frontend mark-up`** | Reference | Older single-file prototype; not modified. |
 

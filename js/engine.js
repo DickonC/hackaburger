@@ -369,12 +369,18 @@
      2B. SCHEDULE (shared by both views) + SCHEDULE-AWARE FORECAST
      ===================================================================== */
   var SCHEDULE = [
-    { id: 'b1', type: 'booking', start: 13 * 60, end: 14 * 60,
-      title: 'Quantitative Strategy Sync', scheduled: 10, expected: 7 },
-    { id: 'buf', type: 'buffer', start: 14 * 60 + 40, end: 14 * 60 + 50,
-      title: '[AUTO-BUFFER] 10 min room air flush', windows: 2 },
-    { id: 'b2', type: 'booking', start: 15 * 60, end: 16 * 60 + 30,
-      title: 'Architecture Review Board', scheduled: 14, expected: 11 }
+    {
+      id: 'b1', type: 'booking', start: 13 * 60, end: 14 * 60,
+      title: 'Quantitative Strategy Sync', scheduled: 10, expected: 7
+    },
+    {
+      id: 'buf', type: 'buffer', start: 14 * 60 + 40, end: 14 * 60 + 50,
+      title: '[AUTO-BUFFER] 10 min room air flush', windows: 2
+    },
+    {
+      id: 'b2', type: 'booking', start: 15 * 60, end: 16 * 60 + 30,
+      title: 'Architecture Review Board', scheduled: 14, expected: 11
+    }
   ];
 
   function clockMinutesOfDay() {

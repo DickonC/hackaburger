@@ -206,12 +206,34 @@
     .foot { border-top: 1px solid #F1F5F9; padding-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; color: #475569; }
     .foot strong { color: var(--ink); font-weight: 600; }
 
-    .big-num { font-family: var(--font-display); font-weight: 800; font-size: clamp(60px, 14vw, 84px); line-height: .95; letter-spacing: -0.04em; }
+    .big-num { font-family: var(--font-display); font-weight: 800; font-size: clamp(52px, 12vw, 72px); line-height: .95; letter-spacing: -0.04em; }
     .big-num span { font-size: .45em; color: var(--muted); margin-left: 2px; font-weight: 700; }
-    .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 16px 0 14px; }
-    .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--tone, var(--fresh)); transition: width .8s cubic-bezier(.2, .8, .2, 1), background-color .4s ease; }
-    .worst { font-size: 17px; line-height: 1.3; color: #334155; }
-    .worst strong { color: var(--ink); font-weight: 600; }
+    .matrix {
+      list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 11px;
+    }
+    .matrix-top {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+      margin-bottom: 5px; font-size: 13.5px; color: #334155;
+    }
+    .matrix-top b { font-weight: 600; font-size: 13px; }
+    .matrix li.lead .matrix-top span { font-weight: 600; color: var(--ink); }
+    .matrix-track { height: 8px; border-radius: 999px; background: #F1F5F9; overflow: hidden; }
+    .matrix-track > i {
+      display: block; height: 100%; width: 0; border-radius: 999px; background: var(--fresh);
+      transition: width .8s cubic-bezier(.2, .8, .2, 1), background-color .4s ease;
+    }
+    .matrix li[data-level="good"] b { color: var(--fresh-ink); }
+    .matrix li[data-level="good"] .matrix-track > i { background: var(--fresh); }
+    .matrix li[data-level="mid"] b { color: var(--amber-ink); }
+    .matrix li[data-level="mid"] .matrix-track > i { background: var(--amber); }
+    .matrix li[data-level="low"] b { color: var(--red-ink); }
+    .matrix li[data-level="low"] .matrix-track > i { background: var(--red); }
+    .matrix-foot {
+      margin-top: 14px; padding-top: 12px; border-top: 1px solid #F1F5F9;
+      display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+      font-size: 13.5px; color: #475569;
+    }
+    .matrix-foot strong { font-weight: 600; }
 
     .card-action { display: flex; flex-direction: column; }
     .action-title { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.02em; font-size: clamp(26px, 6vw, 34px); line-height: 1.08; overflow-wrap: anywhere; }
@@ -373,8 +395,29 @@
           <span id="focusChip" class="chip">Sharp</span>
         </div>
         <div class="big-num num"><b id="cpiNum" style="font-weight:inherit">86</b><span>%</span></div>
-        <div class="bar" aria-hidden="true"><i id="cpiBar" style="width:86%"></i></div>
-        <p id="worstLine" class="worst">Strategic thinking <strong>−24%</strong></p>
+        <ul class="matrix" aria-label="Focus by kind of thinking, compared with fresh air">
+          <li data-level="good">
+            <div class="matrix-top"><span>Routine search</span><b class="num" id="mxRoutine">96%</b></div>
+            <div class="matrix-track"><i id="mxRoutineBar" style="width:96%"></i></div>
+          </li>
+          <li data-level="mid">
+            <div class="matrix-top"><span>Focused work</span><b class="num" id="mxFocused">74%</b></div>
+            <div class="matrix-track"><i id="mxFocusedBar" style="width:74%"></i></div>
+          </li>
+          <li data-level="low">
+            <div class="matrix-top"><span>Using information</span><b class="num" id="mxInfo">62%</b></div>
+            <div class="matrix-track"><i id="mxInfoBar" style="width:62%"></i></div>
+          </li>
+          <li data-level="low">
+            <div class="matrix-top"><span>Crisis response</span><b class="num" id="mxCrisis">53%</b></div>
+            <div class="matrix-track"><i id="mxCrisisBar" style="width:53%"></i></div>
+          </li>
+          <li class="lead" data-level="low">
+            <div class="matrix-top"><span>Strategic thinking</span><b class="num" id="mxStrategic">50%</b></div>
+            <div class="matrix-track"><i id="mxStrategicBar" style="width:50%"></i></div>
+          </li>
+        </ul>
+        <p class="matrix-foot"><span>Reaction speed</span><strong class="num" id="latencyLine">−2.8%</strong></p>
       </article>
 
       <article id="actionCard" class="card card-action" data-state="none">
@@ -456,9 +499,12 @@
     }
     var TONE_COLOR = { fresh: '#22C55E', warm: '#65A30D', stuffy: '#F59E0B', bad: '#EF4444' };
 
-    var DOMAINS = [
-      ['strategic', 'Strategic thinking'], ['crisis', 'Crisis response'],
-      ['info', 'Information use'], ['focused', 'Focused work'], ['routine', 'Routine search']
+    var MATRIX = [
+      ['routine', 'mxRoutine'],
+      ['focused', 'mxFocused'],
+      ['info', 'mxInfo'],
+      ['crisis', 'mxCrisis'],
+      ['strategic', 'mxStrategic']
     ];
 
     function ppm(v) { return Math.round(v).toLocaleString('en-GB'); }
@@ -529,7 +575,7 @@
       if (d.mode === 'guided' && d.step > 0) {
         strip.hidden = false;
         $('demoTag').textContent = 'STEP ' + d.step + '/' + d.total;
-        $('demoCap').textContent = d.title + ' — ' + d.caption;
+        $('demoCap').textContent = d.caption;
         var dots = $('demoDots').children;
         for (var i = 0; i < dots.length; i++) {
           dots[i].className = (i + 1 === d.step) ? 'on' : (i + 1 < d.step ? 'done' : '');
@@ -582,26 +628,36 @@
       $('gaugeA11y').setAttribute('aria-label', occ + ' of ' + cap + ' seats taken');
     }
 
+    function levelFor(pct) {
+      if (pct >= 80) return 'good';
+      if (pct >= 65) return 'mid';
+      return 'low';
+    }
+
     function renderFocus(band) {
       var cog = Caelum.evaluateHarvardCOGfx(STATE.co2);
       var cpi = Math.round(cog.overall);
       $('cpiNum').textContent = String(cpi);
-      $('cpiBar').style.width = cpi + '%';
       var chip = $('focusChip');
       chip.textContent = cpi >= 95 ? 'Full focus' : cpi >= 80 ? 'Sharp' : cpi >= 65 ? 'Slightly dulled' : cpi >= 50 ? 'Dulled' : 'Foggy';
 
-      var worst = null;
-      DOMAINS.forEach(function (d) { if (worst === null || cog[d[0]] < cog[worst[0]]) worst = d; });
-      var drop = 100 - cog[worst[0]];
-      var line = $('worstLine');
-      line.textContent = '';
-      if (drop <= 2) {
-        line.textContent = 'Air is not holding anyone back.';
+      MATRIX.forEach(function (row) {
+        var pct = cog[row[0]];
+        var value = $(row[1]);
+        var bar = $(row[1] + 'Bar');
+        value.textContent = pct + '%';
+        value.parentElement.parentElement.setAttribute('data-level', levelFor(pct));
+        bar.style.width = pct + '%';
+      });
+
+      var penalty = Math.abs(parseFloat(cog.reactionPenalty) || 0);
+      var latency = $('latencyLine');
+      if (penalty < 0.05) {
+        latency.textContent = 'unchanged';
+        latency.style.color = '';
       } else {
-        line.appendChild(document.createTextNode(worst[1] + ' '));
-        var s = document.createElement('strong');
-        s.textContent = '−' + drop + '%';
-        line.appendChild(s);
+        latency.textContent = '−' + penalty.toFixed(1) + '%';
+        latency.style.color = penalty >= 1.5 ? 'var(--red-ink)' : 'var(--amber-ink)';
       }
     }
 
@@ -858,8 +914,13 @@
       var best = Caelum.bestTimeFromTimeline(tl);
       chartInfo.tl = tl; chartInfo.best = best; chartInfo.nowTod = Caelum.clockMinutesOfDay();
 
-      $('bestTitle').textContent = best.isNow ? 'Best time to book: right now' : 'Best time to book: ' + Caelum.formatClock(best.tod);
-      $('bestSub').textContent = (best.isNow ? 'Air only gets stuffier from here' : 'Freshest bookable air in the next 4 hours') + ' · ~' + ppm(best.co2) + ' ppm';
+      if (best.isNow && best.co2 >= 1000) {
+        $('bestTitle').textContent = 'No fresh slot soon — open windows first';
+        $('bestSub').textContent = 'Air stays above 1,000 ppm for the next 4 hours unless ventilated · ~' + ppm(best.co2) + ' ppm';
+      } else {
+        $('bestTitle').textContent = best.isNow ? 'Best time to book: right now' : 'Best time to book: ' + Caelum.formatClock(best.tod);
+        $('bestSub').textContent = (best.isNow ? 'Air only gets stuffier from here' : 'Freshest bookable air in the next 4 hours') + ' · ~' + ppm(best.co2) + ' ppm';
+      }
 
       if (!chart) return;
       var peak = 0;

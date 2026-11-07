@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <link rel="icon" href="data:,">
@@ -7,10 +8,16 @@
   <title>CAELUM // Ops Console</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com/3.4.1"></script>
-  <!-- Google Fonts: Plus Jakarta Sans & IBM Plex Mono -->
+  <!-- Fonts (DESIGN_SYSTEM.md §3.1): Cabinet Grotesk + General Sans (Fontshare), JetBrains Mono (telemetry) -->
+  <link rel="preconnect" href="https://api.fontshare.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link
+    href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&f[]=general-sans@400,500,600,700&display=swap"
+    rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
   <!-- Chart.js for High-Precision Telemetry -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
@@ -20,21 +27,23 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-            mono: ['"IBM Plex Mono"', 'monospace'],
+            display: ['"Cabinet Grotesk"', 'sans-serif'],
+            sans: ['"General Sans"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
           },
           colors: {
-            canvas: '#0A0B0D',
-            surface: '#111317',
-            elevated: '#171A20',
-            borderLine: '#22262F',
-            inkPrimary: '#F3F4F6',
-            inkSecondary: '#9CA3AF',
-            inkMuted: '#6B7280',
-            tealOptimal: '#2DD4BF',
-            iceForecast: '#60A5FA',
-            amberWarn: '#FBBF24',
-            coralCrit: '#F87171',
+            /* Shared with the room view (index.html). Darker ink steps so small admin text stays readable. */
+            canvas: '#F1F5F9',
+            surface: '#FFFFFF',
+            elevated: '#F8FAFC',
+            borderLine: '#E2E8F0',
+            inkPrimary: '#0F172A',
+            inkSecondary: '#334155',
+            inkMuted: '#475569',
+            tealOptimal: '#15803D',
+            iceForecast: '#0369A1',
+            amberWarn: '#B45309',
+            coralCrit: '#B91C1C',
           }
         }
       }
@@ -42,51 +51,193 @@
   </script>
 
   <style>
-    /* Institutional Dark Mode Base & Anti-AI Slop Rules */
+    /* Same consumer palette as index.html. The page wash follows the current air. */
+    :root {
+      --bg: #F8FAFC;
+      --fresh: #22C55E;  --fresh-bg: #DCFCE7;  --fresh-ink: #15803D;
+      --warm:  #65A30D;  --warm-bg:  #ECFCCB;  --warm-ink:  #4D7C0F;
+      --sky:   #0EA5E9;  --sky-bg:   #E0F2FE;  --sky-ink:   #0369A1;
+      --amber: #F59E0B;  --amber-bg: #FEF3C7;  --amber-ink: #B45309;
+      --red:   #EF4444;  --red-bg:   #FEE2E2;  --red-ink:   #B91C1C;
+    }
+    body[data-tone="fresh"]  { --tone: var(--fresh); --tone-bg: var(--fresh-bg); --tone-ink: var(--fresh-ink); }
+    body[data-tone="warm"]   { --tone: var(--warm);  --tone-bg: var(--warm-bg);  --tone-ink: var(--warm-ink); }
+    body[data-tone="stuffy"] { --tone: var(--amber); --tone-bg: var(--amber-bg); --tone-ink: var(--amber-ink); }
+    body[data-tone="bad"]    { --tone: var(--red);   --tone-bg: var(--red-bg);   --tone-ink: var(--red-ink); }
+
     * {
       box-sizing: border-box;
     }
+
     body {
-      background-color: #0A0B0D;
-      color: #F3F4F6;
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      background:
+        radial-gradient(900px 420px at 90% -10%, var(--tone-bg, var(--fresh-bg)) 0%, transparent 70%),
+        radial-gradient(700px 360px at -10% 0%, var(--sky-bg) 0%, transparent 65%),
+        var(--bg);
+      background-repeat: no-repeat;
+      color: #0F172A;
+      font-family: 'General Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       letter-spacing: -0.015em;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
+      transition: background-color .4s ease;
     }
-    h1, h2, h3, .heading-tight {
+
+    .room-bar {
+      background: rgba(248, 250, 252, 0.86);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    :focus-visible {
+      outline: 2px solid #0369A1;
+      outline-offset: 2px;
+    }
+
+    h1,
+    h2,
+    h3,
+    .heading-tight,
+    .brand-wordmark {
+      font-family: 'Cabinet Grotesk', 'General Sans', sans-serif;
       letter-spacing: -0.025em;
     }
+
     .font-mono-tabular {
-      font-family: 'IBM Plex Mono', monospace;
+      font-family: 'JetBrains Mono', monospace;
       font-variant-numeric: tabular-nums;
       letter-spacing: -0.01em;
     }
 
-    /* Engineered Surface Card with 1px border & directional top light highlight */
+    /* Same card language as the room view, slightly tighter for a dense console */
     .inst-panel {
-      background-color: #111317;
-      border: 1px solid #22262F;
-      border-top-color: rgba(255, 255, 255, 0.07);
-      border-radius: 6px;
-    }
-    .inst-panel-elevated {
-      background-color: #171A20;
-      border: 1px solid #22262F;
-      border-top-color: rgba(255, 255, 255, 0.08);
-      border-radius: 6px;
-    }
-    .inst-well {
-      background-color: #0A0B0D;
-      border: 1px solid #1C2029;
-      border-radius: 4px;
+      background-color: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(226, 232, 240, 0.95);
+      border-radius: 16px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.10);
     }
 
-    /* Subtle status indicator bar at top of KPI cards */
-    .kpi-accent-teal { border-top: 2px solid #2DD4BF; }
-    .kpi-accent-ice { border-top: 2px solid #60A5FA; }
-    .kpi-accent-amber { border-top: 2px solid #FBBF24; }
-    .kpi-accent-coral { border-top: 2px solid #F87171; }
+    .inst-panel-elevated {
+      background-color: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 14px;
+      box-shadow: 0 12px 32px -16px rgba(15, 23, 42, 0.28);
+    }
+
+    .inst-well {
+      background-color: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+    }
+
+    /* Same tinted surfaces as the room view hero and next-action card */
+    .metric.tone-fresh  { background: linear-gradient(160deg, var(--fresh-bg), rgba(255, 255, 255, .92) 74%); }
+    .metric.tone-warm   { background: linear-gradient(160deg, var(--warm-bg), rgba(255, 255, 255, .92) 74%); }
+    .metric.tone-stuffy { background: linear-gradient(160deg, var(--amber-bg), rgba(255, 255, 255, .92) 74%); }
+    .metric.tone-bad    { background: linear-gradient(160deg, var(--red-bg), rgba(255, 255, 255, .92) 74%); }
+    .metric.action[data-state="open"] { background: linear-gradient(160deg, var(--fresh-bg), rgba(255, 255, 255, .92) 70%); }
+    .metric.action[data-state="now"],
+    .metric.action[data-state="soon"] { background: linear-gradient(160deg, var(--amber-bg), rgba(255, 255, 255, .92) 70%); }
+
+    .state-pill {
+      font-weight: 600;
+      font-size: 13px;
+      line-height: 1;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--tone-bg, var(--fresh-bg));
+      color: var(--tone-ink, var(--fresh-ink));
+      white-space: nowrap;
+    }
+    #co2StatusBadge {
+      background: rgba(255, 255, 255, .88);
+      color: var(--tone-ink, var(--fresh-ink));
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .btn-warn {
+      background: var(--amber);
+      color: #3b2300;
+      box-shadow: 0 10px 24px -12px rgba(245, 158, 11, .8);
+    }
+    .btn-warn:hover { filter: brightness(1.04); }
+    .btn-go { background: var(--fresh-ink); color: #fff; }
+    .btn-go:hover { filter: brightness(1.06); }
+    .btn-quiet {
+      background: #fff;
+      color: #0F172A;
+      border: 1px solid #E2E8F0;
+      box-shadow: none;
+    }
+    .btn-quiet:hover { background: #F8FAFC; }
+
+    .sched-buffer {
+      background: var(--fresh-bg);
+      border: 1px solid #86EFAC;
+    }
+
+    .quiet-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    .metric { padding: 20px 22px; min-width: 0; }
+    .quiet-metrics .metric:nth-child(odd) { border-right: 1px solid #E2E8F0; }
+    .quiet-metrics .metric:nth-child(-n+2) { border-bottom: 1px solid #E2E8F0; }
+    .metric.where { display: flex; flex-direction: column; }
+    .where-map { position: relative; flex: 1; min-height: 150px; margin-top: 12px; }
+    @media (max-width: 799px) {
+      .quiet-metrics .metric.where,
+      .quiet-metrics .metric.action {
+        grid-column: 1 / -1;
+        border-right: 0 !important;
+        border-bottom: 1px solid #E2E8F0;
+      }
+      .quiet-metrics .metric.action { border-bottom: 0; }
+    }
+    @media (min-width: 800px) {
+      .quiet-metrics { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.3fr) minmax(240px, 1.35fr) minmax(200px, 0.95fr); }
+      .quiet-metrics .metric { border: 0 !important; border-left: 1px solid #E2E8F0 !important; }
+      .quiet-metrics .metric:first-child { border-left: 0 !important; }
+    }
+    .metric-k { font-size: 14px; color: #475569; }
+    .metric-num {
+      font-family: 'Cabinet Grotesk', 'General Sans', sans-serif;
+      font-weight: 800;
+      font-size: clamp(32px, 4vw, 44px);
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-top: 8px;
+    }
+    .metric-sub { margin-top: 8px; font-size: 14px; color: #334155; }
+    .focus-kinds { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+    .focus-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 3px; align-items: baseline; }
+    .focus-row .track { grid-column: 1 / -1; height: 8px; background: #F1F5F9; border-radius: 999px; overflow: hidden; }
+    .focus-row .track > div { height: 100%; border-radius: 999px; }
+    details.more > summary {
+      cursor: pointer;
+      padding: 18px 22px;
+      font-family: 'Cabinet Grotesk', 'General Sans', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+      list-style: none;
+    }
+    details.more > summary::-webkit-details-marker { display: none; }
+    details.more > summary::after {
+      content: 'Show';
+      float: right;
+      font-family: 'General Sans', sans-serif;
+      font-weight: 500;
+      font-size: 14px;
+      color: #475569;
+      letter-spacing: 0;
+    }
+    details.more[open] > summary::after { content: 'Hide'; }
+    details.more[open] > summary { border-bottom: 1px solid #E2E8F0; }
 
     /* Precision Enterprise Sliders */
     input[type="range"].inst-slider {
@@ -94,24 +245,26 @@
       appearance: none;
       width: 100%;
       height: 4px;
-      background: #22262F;
-      border-radius: 2px;
+      background: #E2E8F0;
+      border-radius: 999px;
       outline: none;
     }
+
     input[type="range"].inst-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
       width: 14px;
       height: 14px;
-      border-radius: 3px;
-      background: #F3F4F6;
-      border: 1px solid #0A0B0D;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+      border-radius: 999px;
+      background: #0F172A;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
       cursor: pointer;
       transition: background-color 0.15s ease, transform 0.1s ease;
     }
+
     input[type="range"].inst-slider::-webkit-slider-thumb:hover {
-      background: #2DD4BF;
+      background: #15803D;
       transform: scale(1.08);
     }
 
@@ -120,859 +273,547 @@
       width: 4px;
       height: 4px;
     }
+
     .inst-scroll::-webkit-scrollbar-track {
-      background: #0A0B0D;
+      background: #F1F5F9;
     }
+
     .inst-scroll::-webkit-scrollbar-thumb {
-      background: #22262F;
+      background: #CBD5E1;
       border-radius: 2px;
     }
+
     .inst-scroll::-webkit-scrollbar-thumb:hover {
-      background: #374151;
+      background: #94A3B8;
     }
 
     /* Guided-demo highlights */
     @keyframes demoPulse {
-      0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55); }
-      70%  { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
-    }
-    .demo-pulse { animation: demoPulse 1.4s ease-out infinite; border-color: #FBBF24 !important; }
-    @keyframes demoFlash {
-      0%   { background-color: rgba(45, 212, 191, 0.35); }
-      100% { background-color: rgba(45, 212, 191, 0.10); }
-    }
-    .demo-flash { animation: demoFlash 1.6s ease-out 1; }
-    .demo-step-dot { width: 22px; height: 4px; border-radius: 2px; background: #22262F; transition: background-color .2s ease; }
-    .demo-step-dot.done { background: #60A5FA; }
-    .demo-step-dot.active { background: #2DD4BF; }
-    kbd {
-      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
-      background: #0A0B0D; border: 1px solid #22262F; border-bottom-width: 2px;
-      border-radius: 3px; padding: 0 5px; color: #F3F4F6;
+      0% {
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5);
+      }
+
+      70% {
+        box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+      }
     }
 
-    /* Subtle CAD Grid Pattern for Spatial Map */
+    .demo-pulse {
+      animation: demoPulse 1.4s ease-out infinite;
+      border-color: #F59E0B !important;
+    }
+
+    @keyframes demoFlash {
+      0% {
+        background-color: rgba(34, 197, 94, 0.32);
+      }
+
+      100% {
+        background-color: rgba(34, 197, 94, 0.10);
+      }
+    }
+
+    .demo-flash {
+      animation: demoFlash 1.6s ease-out 1;
+    }
+
+    .demo-step-dot {
+      width: 22px;
+      height: 4px;
+      border-radius: 2px;
+      background: #E2E8F0;
+      transition: background-color .2s ease;
+    }
+
+    .demo-step-dot.done {
+      background: #0EA5E9;
+    }
+
+    .demo-step-dot.active {
+      background: #22C55E;
+    }
+
+    kbd {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 0 5px;
+      color: #0F172A;
+    }
+
+    /* CAD grid sits on the same slate field as the room page */
     .cad-grid-bg {
-      background-color: #0A0B0D;
-      background-image: 
-        linear-gradient(to right, rgba(34, 38, 47, 0.45) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(34, 38, 47, 0.45) 1px, transparent 1px);
+      background-color: #F8FAFC;
+      background-image:
+        linear-gradient(to right, rgba(226, 232, 240, 0.95) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(226, 232, 240, 0.95) 1px, transparent 1px);
       background-size: 20px 20px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col justify-between selection:bg-tealOptimal/20 selection:text-tealOptimal">
 
-  <!-- =====================================================================
-       TOP INSTITUTIONAL HEADER & PIPELINE TELEMETRY BAR
-       ===================================================================== -->
-  <header class="bg-surface border-b border-borderLine sticky top-0 z-50">
-    <div class="max-w-[1680px] mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-      
-      <!-- Left: Brand Identity & Room Selector -->
-      <div class="flex items-center gap-4">
-        <div class="flex items-center gap-2.5">
-          <!-- Clean Geometric Mark -->
-          <div class="w-6 h-6 rounded bg-elevated border border-borderLine flex items-center justify-center">
-            <svg class="w-3.5 h-3.5 text-tealOptimal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <div class="flex items-baseline gap-2">
-            <span class="font-bold tracking-tight text-base text-inkPrimary">CAELUM</span>
-            <span class="text-[11px] font-mono-tabular text-inkMuted border border-borderLine bg-canvas px-1.5 py-0.5 rounded">v2.6 // HTB-26</span>
-          </div>
+<body data-tone="fresh" class="min-h-screen flex flex-col justify-between selection:bg-tealOptimal/20 selection:text-tealOptimal">
+
+  <header class="room-bar border-b border-borderLine sticky top-0 z-30">
+    <div class="max-w-[1100px] mx-auto px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-3">
+
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-[9px] bg-inkPrimary text-white flex items-center justify-center">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
         </div>
-
-        <div class="h-4 w-px bg-borderLine hidden sm:block"></div>
-
-        <!-- Room Selector -->
-        <div class="flex items-center gap-1.5">
-          <span class="text-[11px] font-mono-tabular uppercase text-inkMuted hidden md:inline">Zone:</span>
-          <select id="roomSelector" class="bg-elevated text-xs font-medium text-inkPrimary border border-borderLine rounded-md px-2.5 py-1.5 focus:outline-none focus:border-tealOptimal cursor-pointer transition">
-            <option value="appleton">Appleton Tower — Study Pod 4.02 (65 m³ · 2 Win)</option>
-            <option value="forum">Informatics Forum — Meeting Room 2.14 (140 m³ · 4 Win)</option>
-            <option value="personal">Personal Study Mode — Dorm / Bedroom (32 m³ · 1 Win)</option>
-          </select>
-          <!-- Action: Add New Custom Room -->
-          <button id="addRoomBtn" class="flex items-center gap-1 text-xs font-mono-tabular font-medium px-2.5 py-1.5 rounded-md bg-tealOptimal/10 hover:bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 transition shadow-xs" title="Add New Room Zone with Custom Dimensions & Window Settings">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            <span class="hidden sm:inline">Add Room</span>
-          </button>
-          <!-- Action: Delete Selected Custom Room -->
-          <button id="deleteRoomBtn" class="hidden items-center justify-center p-1.5 rounded-md bg-coralCrit/10 hover:bg-coralCrit/25 text-coralCrit border border-coralCrit/30 transition" title="Delete this custom zone">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-          </button>
-        </div>
+        <span class="brand-wordmark font-extrabold text-base text-inkPrimary">CAELUM</span>
       </div>
 
-      <!-- Center: Live System Clock & Status Pill -->
-      <div class="hidden xl:flex items-center gap-3 bg-canvas border border-borderLine rounded-md px-3 py-1 text-xs font-mono-tabular">
-        <span class="flex items-center gap-1.5 text-inkSecondary">
-          <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal"></span>
-          <span>ODE ENGINE: Δt = 60s</span>
-        </span>
-        <span class="text-borderLine">|</span>
-        <span class="text-inkSecondary">CLOCK: <strong id="simTimeLabel" class="text-inkPrimary">14:15:00</strong></span>
-        <span class="text-borderLine">|</span>
-        <span id="headerStateBadge" class="text-amberWarn font-medium">STATE: MODERATE STAGNATION</span>
+      <select id="roomSelector" aria-label="Room"
+        class="bg-white text-sm font-medium text-inkPrimary border border-borderLine rounded-xl px-3 py-2 focus:outline-none focus:border-tealOptimal cursor-pointer">
+        <option value="appleton">Appleton Tower — Study Pod 4.02 (65 m³ · 2 Win)</option>
+        <option value="forum">Informatics Forum — Meeting Room 2.14 (140 m³ · 4 Win)</option>
+        <option value="personal">Personal Study Mode — Dorm / Bedroom (32 m³ · 1 Win)</option>
+      </select>
+
+      <div class="flex items-center gap-3 text-sm ml-auto">
+        <span class="font-mono-tabular text-inkPrimary"><span id="simTimeLabel">14:15:00</span></span>
+        <span id="headerStateBadge" class="state-pill">Fresh</span>
       </div>
 
-      <!-- Right: Primary Interactive Action Controls -->
-      <div class="flex flex-wrap items-center gap-2.5">
-        <!-- Demo control group: both modes (team picks later) -->
-        <div class="flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-md border border-borderLine bg-canvas">
-          <span class="text-[10px] font-mono-tabular uppercase tracking-wider text-inkMuted mr-1 hidden lg:inline">Demo</span>
-          <!-- Mode A: 8-Hour Day (fast-forward) -->
-          <button id="timeWarpBtn" title="Fast-forward a whole working day (+5 sim-minutes every 130 ms). Shortcut: S" class="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-inkPrimary border border-borderLine transition">
-            <span id="timeWarpIcon" class="text-iceForecast font-mono-tabular">▶</span>
-            <span id="timeWarpText">Run 8-Hour Day (fast-forward)</span>
-          </button>
-          <!-- Mode B: 4-Step Guided Demo -->
-          <button id="guidedDemoBtn" title="Scripted 4-step scenario with Next / Prev. Shortcut: D" class="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-inkPrimary border border-borderLine transition">
-            <span id="guidedDemoIcon" class="text-tealOptimal font-mono-tabular">◈</span>
-            <span id="guidedDemoText">Guided Demo (4 steps)</span>
-          </button>
-        </div>
-
-        <!-- Action B: Trigger Window Flush / Mark Closed with Live Stopwatch -->
-        <button id="toggleWindowBtn" class="flex items-center gap-2 text-xs font-mono-tabular font-medium px-3 py-1.5 rounded-md bg-tealOptimal/10 hover:bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 transition cursor-pointer">
-          <span id="windowStatusDot" class="w-2 h-2 rounded-full bg-tealOptimal"></span>
-          <span id="windowBtnLabel">Trigger Window Flush Now</span>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="timeWarpBtn" type="button" title="Fast-forward a working day. Shortcut: S"
+          class="flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-xl bg-white hover:bg-[#E2E8F0] text-inkPrimary border border-borderLine transition">
+          <span id="timeWarpIcon" class="text-iceForecast font-mono-tabular">▶</span>
+          <span id="timeWarpText">Play the day</span>
         </button>
-
-        <!-- Action C: Arduino BLE Hardware Admin Trigger -->
-        <button id="openArduinoAdminBtn" type="button" title="Arduino BLE Hardware Management (Interval & Control Strength)" class="flex items-center gap-1.5 text-xs font-mono-tabular px-2.5 py-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-tealOptimal border border-borderLine hover:border-tealOptimal/40 transition cursor-pointer shadow-xs">
-          <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal animate-pulse"></span>
-          <span class="hidden xl:inline text-inkSecondary">Arduino:</span>
-          <strong id="headerActiveArduinoNode" class="text-inkPrimary font-medium">uno-q-1 (+4dBm · 2.4s)</strong>
+        <button id="guidedDemoBtn" type="button" title="Four-step walkthrough. Shortcut: D"
+          class="flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-xl bg-white hover:bg-[#E2E8F0] text-inkPrimary border border-borderLine transition">
+          <span id="guidedDemoIcon" class="text-tealOptimal font-mono-tabular">◈</span>
+          <span id="guidedDemoText">Guided demo</span>
         </button>
-
-        <!-- Open the public Room View in its own window (synced live) -->
-        <button id="openRoomViewBtn" type="button" title="Open the public Room View (index.html) in a new window. It stays in sync with this console." class="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md bg-iceForecast/10 hover:bg-iceForecast/20 text-iceForecast border border-iceForecast/30 transition cursor-pointer">
-          Open Room View <span aria-hidden="true">↗</span>
+        <button id="openRoomViewBtn" type="button" title="Open the room view in a new window. It stays in sync."
+          class="text-sm font-medium px-3 py-2 rounded-xl bg-iceForecast/10 hover:bg-iceForecast/20 text-iceForecast border border-iceForecast/30 transition">
+          Room view <span aria-hidden="true">↗</span>
         </button>
-
-        <!-- Reset Button -->
-        <button id="resetSimBtn" title="Reset Baseline Parameters (R)" class="p-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-inkSecondary hover:text-inkPrimary border border-borderLine text-xs font-mono-tabular transition cursor-pointer">
-          ↺
-        </button>
-
-        <!-- Keyboard shortcut hint -->
         <div class="relative">
-          <button id="shortcutsBtn" type="button" title="Keyboard shortcuts (?)" aria-haspopup="true" aria-expanded="false" class="w-7 h-7 rounded-md bg-elevated hover:bg-[#1E222A] text-inkSecondary hover:text-inkPrimary border border-borderLine text-xs font-mono-tabular transition cursor-pointer">?</button>
-          <div id="shortcutsPanel" class="hidden absolute right-0 top-9 z-50 w-64 inst-panel-elevated p-3 shadow-2xl text-[11px] font-mono-tabular text-inkSecondary">
-            <div class="text-[10px] uppercase tracking-wider text-inkMuted mb-2">Keyboard shortcuts</div>
+          <button id="settingsBtn" type="button" title="Settings" aria-haspopup="true" aria-expanded="false"
+            class="text-sm font-medium px-3 py-2 rounded-xl bg-white hover:bg-[#E2E8F0] text-inkSecondary hover:text-inkPrimary border border-borderLine transition">
+            Settings
+          </button>
+          <div id="settingsPanel"
+            class="hidden absolute right-0 top-12 z-50 w-64 inst-panel-elevated p-1.5 text-sm">
+            <div class="px-2 pt-1 pb-1.5 text-inkMuted">Rooms</div>
+            <button id="addRoomBtn" type="button"
+              class="w-full text-left px-2.5 py-1.5 rounded text-tealOptimal hover:bg-tealOptimal/10 transition">Add a room</button>
+            <button id="deleteRoomBtn" type="button"
+              class="hidden w-full text-left px-2.5 py-1.5 rounded text-coralCrit hover:bg-coralCrit/10 transition">Delete this room</button>
+            <div class="px-2 pt-2 pb-1.5 text-inkMuted border-t border-borderLine mt-1.5">Scanner</div>
+            <button id="openArduinoAdminBtn" type="button"
+              class="w-full text-left px-2.5 py-1.5 rounded text-inkSecondary hover:bg-elevated hover:text-inkPrimary transition flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal"></span>
+              <strong id="headerActiveArduinoNode" class="text-inkPrimary font-medium truncate">uno-q-1 (+4dBm · 2.4s)</strong>
+            </button>
+            <div class="px-2 pt-2 pb-1.5 text-inkMuted border-t border-borderLine mt-1.5">Simulation</div>
+            <button id="resetSimBtn" type="button" title="Reset to baseline (R)"
+              class="w-full text-left px-2.5 py-1.5 rounded text-inkSecondary hover:bg-elevated hover:text-inkPrimary transition">Reset <kbd>R</kbd></button>
+          </div>
+        </div>
+        <div class="relative">
+          <button id="shortcutsBtn" type="button" title="Keyboard shortcuts" aria-haspopup="true" aria-expanded="false"
+            class="w-9 h-9 rounded-xl bg-white hover:bg-[#E2E8F0] text-inkSecondary hover:text-inkPrimary border border-borderLine text-sm transition">?</button>
+          <div id="shortcutsPanel"
+            class="hidden absolute right-0 top-12 z-50 w-72 inst-panel-elevated p-3 text-sm text-inkSecondary">
+            <div class="text-inkPrimary font-medium mb-2">Shortcuts</div>
             <ul class="space-y-1.5">
-              <li class="flex justify-between gap-3"><span><kbd>D</kbd> Start / advance guided demo</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>Shift</kbd>+<kbd>D</kbd> Back one step</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>S</kbd> Start / pause 8-hour sim</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>W</kbd> Toggle windows</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>+</kbd> / <kbd>-</kbd> Occupancy up / down</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>R</kbd> Reset</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>Esc</kbd> Exit demo / close dialogs</span></li>
-              <li class="flex justify-between gap-3"><span><kbd>?</kbd> Show / hide this panel</span></li>
+              <li><kbd>D</kbd> Next demo step</li>
+              <li><kbd>Shift</kbd>+<kbd>D</kbd> Previous step</li>
+              <li><kbd>S</kbd> Play or pause the day</li>
+              <li><kbd>W</kbd> Open or close windows</li>
+              <li><kbd>+</kbd> / <kbd>-</kbd> People up or down</li>
+              <li><kbd>R</kbd> Reset</li>
+              <li><kbd>Esc</kbd> Exit demo</li>
             </ul>
           </div>
         </div>
       </div>
-
     </div>
 
-    <!-- Guided Demo bar (visible only while the 4-step demo is active) -->
-    <div id="demoBar" class="hidden bg-surface border-t border-borderLine px-4 py-2">
-      <div class="max-w-[1680px] mx-auto flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="text-[10px] font-mono-tabular uppercase tracking-wider text-tealOptimal border border-tealOptimal/30 bg-tealOptimal/10 px-1.5 py-0.5 rounded">Guided Demo</span>
-        <button id="demoPrevBtn" type="button" class="text-xs font-mono-tabular px-2.5 py-1 rounded bg-elevated border border-borderLine text-inkPrimary hover:border-inkMuted transition cursor-pointer disabled:opacity-40 disabled:cursor-default">◀ Prev</button>
+    <div id="demoBar" class="hidden border-t border-borderLine px-6 py-3">
+      <div class="max-w-[1100px] mx-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span class="text-sm font-medium text-tealOptimal">Guided demo</span>
+        <button id="demoPrevBtn" type="button"
+          class="text-sm px-3 py-1.5 rounded-xl bg-white border border-borderLine text-inkPrimary hover:border-inkMuted transition disabled:opacity-40">Back</button>
         <div id="demoStepper" class="flex items-center gap-1" aria-hidden="true">
           <span class="demo-step-dot"></span><span class="demo-step-dot"></span><span class="demo-step-dot"></span><span class="demo-step-dot"></span>
         </div>
         <span id="demoStepLabel" class="text-sm font-semibold text-inkPrimary">Step 1/4 — Fresh room</span>
-        <button id="demoNextBtn" type="button" class="text-xs font-mono-tabular px-2.5 py-1 rounded bg-tealOptimal text-canvas font-semibold hover:bg-tealOptimal/90 transition cursor-pointer">Next ▶</button>
-        <button id="demoAutoBtn" type="button" title="Auto-advance every few seconds" class="text-xs font-mono-tabular px-2.5 py-1 rounded bg-elevated border border-borderLine text-inkSecondary hover:text-inkPrimary transition cursor-pointer">Auto-play: off</button>
-        <button id="demoExitBtn" type="button" class="text-xs font-mono-tabular px-2.5 py-1 rounded bg-canvas border border-borderLine text-inkSecondary hover:text-coralCrit transition cursor-pointer ml-auto">Exit (Esc)</button>
-        <p id="demoCaption" class="w-full text-[13px] text-inkSecondary leading-snug">Caption</p>
+        <button id="demoNextBtn" type="button"
+          class="text-sm px-3 py-1.5 rounded-xl bg-tealOptimal text-canvas font-semibold hover:bg-tealOptimal/90 transition">Next</button>
+        <button id="demoAutoBtn" type="button"
+          class="text-sm px-3 py-1.5 rounded-xl bg-white border border-borderLine text-inkSecondary hover:text-inkPrimary transition">Auto-play: off</button>
+        <button id="demoExitBtn" type="button"
+          class="text-sm px-3 py-1.5 rounded-xl bg-white border border-borderLine text-inkSecondary hover:text-coralCrit transition ml-auto">Exit</button>
+        <p id="demoCaption" class="w-full text-sm text-inkSecondary leading-snug">Caption</p>
       </div>
     </div>
 
-    <!-- Sub-Header: Dual-Track Pipeline Telemetry Bar -->
-    <div class="bg-canvas border-t border-borderLine px-4 py-1.5 text-[11px] font-mono-tabular text-inkSecondary">
-      <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-4">
-        <div class="flex items-center gap-4 overflow-x-auto inst-scroll whitespace-nowrap">
-          <div class="flex items-center gap-1.5">
-            <span class="text-inkMuted uppercase">01 // G-RESEARCH ARDUINO BLE (<span id="stripBleRate" class="text-tealOptimal">2.4s</span>):</span>
-            <span id="stripRawSignals" class="text-inkPrimary">24 BLE Packets</span>
-            <span class="text-inkMuted">&rarr;</span>
-            <span class="text-tealOptimal" id="stripHumans">8 Active Mobile Devices (&gt;-65 dBm)</span>
-          </div>
-          <span class="text-borderLine">/</span>
-          <div class="flex items-center gap-1.5">
-            <span class="text-inkMuted uppercase">02 // MASS-BALANCE ODE:</span>
-            <span>V=<span id="stripVol" class="text-inkPrimary">65</span>m³, Q=<span id="stripAirflow" class="text-inkPrimary">16.3</span>m³/h, G=<span id="stripGen" class="text-inkPrimary">128</span>L/h</span>
-          </div>
-          <span class="text-borderLine">/</span>
-          <div class="flex items-center gap-1.5">
-            <span class="text-inkMuted uppercase">03 // HRT OPTIMAL CONTROL:</span>
-            <span id="stripDecision" class="text-iceForecast">Open 2 Windows in 06m 12s (Duration: 6 min)</span>
-          </div>
-        </div>
-        <div class="hidden lg:flex items-center gap-2 text-inkMuted">
-          <span>PRIVACY: ZERO OPTICAL CAMERAS (MAC HASHING)</span>
-          <span>&bull;</span>
-          <span>CAPEX: £0 (VIRTUAL NDIR)</span>
-        </div>
-      </div>
+    <div class="hidden" aria-hidden="true">
+      <span id="stripBleRate">2.4s</span>
+      <span id="stripRawSignals">24 BLE Packets</span>
+      <span id="stripHumans">8 Active Mobile Devices</span>
+      <span id="stripVol">65</span>
+      <span id="stripAirflow">16.3</span>
+      <span id="stripGen">128</span>
+      <span id="stripDecision">Open 2 windows</span>
+      <span id="co2DeltaDisplay">+860 ppm</span>
+      <span id="payrollLossDisplay">-£151.20 / hr</span>
+      <span id="ghostBadge">33% GHOST DIV</span>
+      <span id="respLoadDisplay">128.0 L/h</span>
+      <span id="qOpenCardDisplay">728 m³/h</span>
+      <span id="cardSessionReport">Target 580 ppm</span>
+      <button id="cardFlushBtn" type="button">Open windows</button>
     </div>
   </header>
 
-  <!-- =====================================================================
-       MAIN WORKSPACE CONTAINER
-       ===================================================================== -->
-  <main class="max-w-[1680px] mx-auto p-4 w-full flex-1 space-y-4">
+  <main class="max-w-[1100px] mx-auto px-6 py-8 w-full flex-1 space-y-6">
 
-    <!-- ROW 1: 4 EXECUTIVE KPI TELEMETRY CARDS -->
-    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-      
-      <!-- Card 1: Virtual CO2 Concentration -->
-      <div id="kpiCo2Card" class="inst-panel kpi-accent-amber p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">01 // Virtual CO₂ Concentration</span>
-            <span id="co2StatusBadge" class="text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-amberWarn/10 text-amberWarn border border-amberWarn/25">
-              STAGNANT
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-2">
-            <span id="co2ValDisplay" class="text-3xl font-bold font-mono-tabular text-inkPrimary">1,280</span>
-            <span class="text-xs font-mono-tabular text-inkSecondary">ppm</span>
-            <span id="co2RateBadge" class="ml-auto text-xs font-mono-tabular text-amberWarn">+16.4 ppm/min</span>
-          </div>
+    <section class="inst-panel quiet-metrics" aria-label="Room now">
+      <div id="kpiCo2Card" class="metric tone-fresh">
+        <div class="flex items-center justify-between gap-2">
+          <span class="metric-k">Air</span>
+          <span id="co2StatusBadge" class="text-sm font-medium text-amberWarn">Getting warm</span>
         </div>
-        <div class="mt-3 pt-2.5 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Outdoor Baseline: <strong class="text-inkPrimary font-normal">420 ppm</strong></span>
-          <span>Delta: <strong id="co2DeltaDisplay" class="text-amberWarn font-normal">+860 ppm</strong></span>
+        <div id="co2ValDisplay" class="metric-num text-inkPrimary">1,280</div>
+        <div id="co2RateBadge" class="metric-sub font-mono-tabular text-amberWarn">+16 ppm/min</div>
+      </div>
+
+      <div id="kpiCpiCard" class="metric">
+        <span class="metric-k">Focus</span>
+        <div id="cpiValDisplay" class="metric-num text-inkPrimary">57%</div>
+        <div id="stratDeficitDisplay" class="hidden" aria-hidden="true">Strategic thinking −42%</div>
+        <span id="cogCeilingPill" class="hidden" aria-hidden="true">57%</span>
+        <div class="focus-kinds">
+          <div class="focus-row">
+            <span class="text-inkSecondary">Routine search</span>
+            <span id="domainRoutine" class="font-mono-tabular text-tealOptimal">96%</span>
+            <div class="track"><div id="barRoutine" class="bg-tealOptimal w-[96%]"></div></div>
+          </div>
+          <div class="focus-row">
+            <span class="text-inkSecondary">Focused work</span>
+            <span id="domainFocused" class="font-mono-tabular text-tealOptimal">74%</span>
+            <div class="track"><div id="barFocused" class="bg-tealOptimal w-[74%]"></div></div>
+          </div>
+          <div class="focus-row">
+            <span class="text-inkSecondary">Using information</span>
+            <span id="domainInfo" class="font-mono-tabular text-amberWarn">62%</span>
+            <div class="track"><div id="barInfo" class="bg-amberWarn w-[62%]"></div></div>
+          </div>
+          <div class="focus-row">
+            <span class="text-inkSecondary">Crisis response</span>
+            <span id="domainCrisis" class="font-mono-tabular text-coralCrit">53%</span>
+            <div class="track"><div id="barCrisis" class="bg-coralCrit w-[53%]"></div></div>
+          </div>
+          <div class="focus-row">
+            <span class="text-inkPrimary font-medium">Strategic thinking</span>
+            <span id="domainStrategic" class="font-mono-tabular text-coralCrit font-medium">50%</span>
+            <div class="track"><div id="barStrategic" class="bg-coralCrit w-[50%]"></div></div>
+          </div>
+          <p class="text-inkSecondary">Reaction speed <span id="latencyPenalty" class="text-coralCrit">−2.8%</span></p>
         </div>
       </div>
 
-      <!-- Card 2: Cognitive Performance Index (Harvard COGfx) -->
-      <div id="kpiCpiCard" class="inst-panel kpi-accent-coral p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">02 // Cognitive Performance (CPI)</span>
-            <span class="text-[10px] font-mono-tabular text-inkSecondary border border-borderLine bg-canvas px-1.5 py-0.5 rounded">
-              Harvard COGfx
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-2">
-            <span id="cpiValDisplay" class="text-3xl font-bold font-mono-tabular text-inkPrimary">57.1%</span>
-            <span class="text-xs font-mono-tabular text-coralCrit" id="stratDeficitDisplay">Strategic: -42.0%</span>
-          </div>
+      <div class="metric where">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="metric-k">Where people are</span>
+          <span id="windowAirflowBadge" class="text-sm text-inkSecondary">Windows closed</span>
         </div>
-        <div class="mt-3 pt-2.5 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Productivity Drag (£45/h/p):</span>
-          <span id="payrollLossDisplay" class="text-coralCrit font-medium">-£151.20 / hr</span>
+        <div class="flex items-baseline gap-3">
+          <div id="bleCountDisplay" class="metric-num text-inkPrimary">8</div>
+          <div class="metric-sub">Booked <strong id="calCountDisplay" class="font-medium text-inkPrimary">12</strong></div>
         </div>
+        <div class="where-map cad-grid-bg rounded-xl border border-borderLine overflow-hidden">
+          <canvas id="cadTopologyCanvas" class="w-full h-full block"></canvas>
+          <div id="cadGlazingLabel" class="absolute top-2 left-3 text-[12px] text-inkMuted pointer-events-none">Windows</div>
+        </div>
+        <p class="mt-2 text-[13px] text-inkSecondary">Core vs perimeter <strong id="spatialGradText" class="font-medium text-inkPrimary">+190 ppm</strong></p>
       </div>
 
-      <!-- Card 3: BLE Occupancy Nowcast N(t) -->
-      <div class="inst-panel kpi-accent-ice p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">03 // BLE Occupancy Nowcast N(t)</span>
-            <span id="ghostBadge" class="text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-iceForecast/10 text-iceForecast border border-iceForecast/25">
-              33% GHOST DIV
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-2">
-            <span id="bleCountDisplay" class="text-3xl font-bold font-mono-tabular text-inkPrimary">8</span>
-            <span class="text-xs font-mono-tabular text-inkSecondary">Active Humans</span>
-            <span class="ml-auto text-xs font-mono-tabular text-inkSecondary">Prior: <strong id="calCountDisplay" class="text-inkPrimary">12 Booked</strong></span>
-          </div>
+      <div id="kpiControlCard" class="metric action">
+        <div class="flex items-center justify-between gap-2">
+          <span id="timerLabelDisplay" class="metric-k">Gets stuffy in</span>
+          <span id="activeTimerBadge" class="hidden text-sm font-medium text-tealOptimal">Open</span>
         </div>
-        <div class="mt-3 pt-2.5 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Filter: <strong class="text-inkPrimary font-normal">RSSI &gt; -65 dBm</strong></span>
-          <span>Resp. Load: <strong id="respLoadDisplay" class="text-iceForecast font-normal">128.0 L/h</strong></span>
+        <div id="countdownDisplay" class="metric-num text-tealOptimal">6 min</div>
+        <div id="flushDurDisplay" class="metric-sub">2 windows · 6 min</div>
+        <span id="durationSubLabel" class="hidden">Flush duration</span>
+        <button id="toggleWindowBtn" type="button"
+          class="mt-4 w-full flex items-center justify-center gap-2 text-sm font-semibold px-3 py-2.5 rounded-xl bg-inkPrimary text-white hover:bg-inkPrimary/90 transition">
+          <span id="windowStatusDot" class="w-2 h-2 rounded-full bg-white"></span>
+          <span id="windowBtnLabel">Open windows</span>
+        </button>
+        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          <span class="text-sm text-inkMuted">Opened</span>
+          <div id="cardWinButtons" class="flex items-center gap-1"></div>
         </div>
-      </div>
-
-      <!-- Card 4: Optimal Ventilation Control -->
-      <div id="kpiControlCard" class="inst-panel kpi-accent-teal p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">04 // Optimal Ventilation Control</span>
-            <div class="flex items-center gap-1.5">
-              <span id="activeTimerBadge" class="hidden text-[10px] font-mono-tabular font-semibold px-2 py-0.5 rounded bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 animate-pulse">
-                ● FLUSHING
-              </span>
-              <button id="cardFlushBtn" class="text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-tealOptimal/15 text-tealOptimal hover:bg-tealOptimal hover:text-canvas transition border border-tealOptimal/30 cursor-pointer">
-                EXECUTE FLUSH
-              </button>
-            </div>
-          </div>
-          <div class="flex items-baseline justify-between mt-2">
-            <div>
-              <span id="timerLabelDisplay" class="text-[10px] font-mono-tabular uppercase text-inkMuted block">Next Window Action</span>
-              <span id="countdownDisplay" class="text-2xl font-bold font-mono-tabular text-tealOptimal">T - 06m 12s</span>
-            </div>
-            <div class="text-right">
-              <span id="durationSubLabel" class="text-[10px] font-mono-tabular uppercase text-inkMuted block">Flush Duration</span>
-              <span id="flushDurDisplay" class="text-sm font-semibold font-mono-tabular text-inkPrimary">6 mins (2 Win)</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Direct Actuation: Say How Many Windows Opened -->
-        <div class="my-2 py-2 border-t border-borderLine/70 flex flex-wrap items-center justify-between gap-1.5">
-          <span class="text-[10px] font-mono-tabular text-inkMuted uppercase">Say How Many Opened:</span>
-          <div id="cardWinButtons" class="flex items-center gap-1">
-            <!-- Dynamically populated via JS -->
-          </div>
-        </div>
-
-        <div class="pt-2 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Flush Airflow Q_open: <strong id="qOpenCardDisplay" class="text-tealOptimal font-normal">728 m³/h</strong></span>
-          <span id="cardSessionReport">Target: <strong class="text-inkPrimary font-normal">580 ppm</strong></span>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- ROW 2: MAIN ANALYTICAL SPLIT (8 COLS LEFT / 4 COLS RIGHT) -->
-    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      
-      <!-- LEFT 8 COLS: MULTI-HORIZON TIME-SERIES & SYNCHRONIZED OCCUPANCY -->
-      <div class="lg:col-span-8 inst-panel p-4 flex flex-col justify-between">
-        
-        <!-- Chart Header & Hardware Validation Toggle -->
-        <div class="flex flex-wrap items-center justify-between pb-3 border-b border-borderLine gap-3">
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="text-sm font-semibold text-inkPrimary">Multi-Horizon CO₂ Trajectory &amp; Monte Carlo Forecast</h2>
-              <span class="text-[10px] font-mono-tabular text-inkSecondary bg-elevated border border-borderLine px-1.5 py-0.5 rounded">-2h Historical &rarr; +4h Projection</span>
-            </div>
-            <p class="text-xs text-inkSecondary mt-0.5">Coupled differential mass-balance ODE driven by BLE occupancy filtering and historical calendar attendance priors.</p>
-          </div>
-
-          <!-- Interactive Aranet4 Validation Overlay Toggle -->
-          <label class="flex items-center gap-2 text-xs font-mono-tabular bg-elevated border border-borderLine px-2.5 py-1.5 rounded cursor-pointer hover:border-inkMuted transition select-none">
-            <input type="checkbox" id="sensorCheckbox" class="accent-tealOptimal rounded-sm cursor-pointer" checked>
-            <span class="text-inkPrimary">Aranet4 NDIR Validation Overlay</span>
-            <span class="text-[10px] text-tealOptimal bg-tealOptimal/10 px-1.5 py-0.2 rounded border border-tealOptimal/20">R² = 0.94</span>
-          </label>
-        </div>
-
-        <!-- Legend Strip -->
-        <div class="flex flex-wrap items-center justify-between gap-2 py-2 text-[11px] font-mono-tabular text-inkSecondary border-b border-borderLine/60">
-          <div class="flex flex-wrap items-center gap-4">
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 bg-inkPrimary inline-block"></span> Virtual CO₂ C(t)
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 border-t-2 border-dashed border-iceForecast inline-block"></span> 4h ML Forecast (±1σ Band)
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 border-t-2 border-dotted border-tealOptimal inline-block"></span> Optimal Window Flush Path
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 border-t border-dashed border-inkMuted inline-block"></span> Aranet4 Ground Truth
-            </span>
-          </div>
-          <div class="text-inkMuted">
-            Thresholds: <span class="text-tealOptimal">650</span> / <span class="text-amberWarn">1,000</span> / <span class="text-coralCrit">1,500 ppm</span>
-          </div>
-        </div>
-
-        <!-- Main CO2 Time-Series Canvas -->
-        <div class="relative w-full h-[300px] mt-2">
-          <canvas id="co2ForecastChart"></canvas>
-        </div>
-
-        <!-- Synchronized Bottom Sub-Chart: Occupancy N(t) -->
-        <div class="mt-3 pt-3 border-t border-borderLine">
-          <div class="flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary mb-1.5">
-            <span class="uppercase tracking-wider">Synchronized Occupancy Time-Series N(t) — Scheduled vs. Actual BLE + ML</span>
-            <div class="flex items-center gap-4">
-              <span class="flex items-center gap-1.5"><span class="w-2.5 h-2 bg-borderLine border border-inkMuted inline-block rounded-xs"></span> Calendar Scheduled Prior</span>
-              <span class="flex items-center gap-1.5"><span class="w-2.5 h-2 bg-iceForecast/40 border border-iceForecast inline-block rounded-xs"></span> BLE Filtered + Nowcast N(t)</span>
-            </div>
-          </div>
-          <div class="relative w-full h-[85px]">
-            <canvas id="occupancyChart"></canvas>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- RIGHT 4 COLS: HARVARD COGFX MATRIX & SPATIAL CAD TOPOLOGY -->
-      <div class="lg:col-span-4 flex flex-col gap-4">
-        
-        <!-- PANEL 1: Harvard COGfx Executive Function Matrix -->
-        <div class="inst-panel p-4">
-          <div class="flex items-center justify-between pb-2.5 border-b border-borderLine">
-            <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Harvard COGfx Executive Matrix</h3>
-              <p class="text-[11px] text-inkSecondary mt-0.5">Empirical dose-response calibrated to 550 ppm = 100% baseline.</p>
-            </div>
-            <span id="cogCeilingPill" class="text-xs font-mono-tabular font-semibold px-2 py-0.5 rounded bg-amberWarn/10 text-amberWarn border border-amberWarn/25">
-              57.1% CEILING
-            </span>
-          </div>
-
-          <div class="space-y-3 mt-3 text-xs font-mono-tabular">
-            <!-- Domain 1 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">01. Routine Information Search</span>
-                <span id="domainRoutine" class="text-tealOptimal font-medium">96%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barRoutine" class="bg-tealOptimal h-full w-[96%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 2 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">02. Focused Activity &amp; Attention</span>
-                <span id="domainFocused" class="text-tealOptimal font-medium">74%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barFocused" class="bg-tealOptimal h-full w-[74%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 3 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">03. Information Usage &amp; Recall</span>
-                <span id="domainInfo" class="text-amberWarn font-medium">62%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barInfo" class="bg-amberWarn h-full w-[62%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 4 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">04. Crisis Response &amp; Triage</span>
-                <span id="domainCrisis" class="text-coralCrit font-medium">53%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barCrisis" class="bg-coralCrit h-full w-[53%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 5 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkPrimary font-medium">05. Strategic Decision-Making</span>
-                <span id="domainStrategic" class="text-coralCrit font-bold">50%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barStrategic" class="bg-coralCrit h-full w-[50%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Reaction Speed Penalty Footer -->
-            <div class="pt-2.5 border-t border-borderLine flex justify-between items-center text-[11px]">
-              <span class="text-inkSecondary">Psychomotor Reaction Latency:</span>
-              <span id="latencyPenalty" class="text-coralCrit font-mono-tabular font-medium">-2.75% speed penalty</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- PANEL 2: Spatial Room Airflow & BLE Signal Topology (CAD View) -->
-        <div class="inst-panel p-4 flex-1 flex flex-col justify-between">
-          <div class="flex items-center justify-between pb-2.5 border-b border-borderLine">
-            <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Spatial BLE &amp; Airflow Topology</h3>
-              <p class="text-[11px] text-inkSecondary mt-0.5">2D CAD density grid &amp; RSSI perimeter boundary (-65 dBm).</p>
-            </div>
-            <span id="windowAirflowBadge" class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-canvas text-inkSecondary border border-borderLine">
-              0.25 ACH INFILTRATION
-            </span>
-          </div>
-
-          <!-- 2D CAD Room Topology Canvas -->
-          <div class="my-2.5 relative w-full h-[165px] cad-grid-bg rounded border border-borderLine overflow-hidden">
-            <canvas id="cadTopologyCanvas" class="w-full h-full block"></canvas>
-            <!-- CAD Overlay Annotations -->
-            <div id="cadGlazingLabel" class="absolute top-1.5 left-2 text-[10px] font-mono-tabular text-inkMuted pointer-events-none">
-              EXTERIOR GLAZING // WIN-01 &amp; WIN-02
-            </div>
-            <div class="absolute bottom-1.5 left-2 text-[10px] font-mono-tabular text-inkSecondary pointer-events-none flex items-center gap-3">
-              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-iceForecast inline-block"></span> In-Room (&gt;-65dBm)</span>
-              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-inkMuted inline-block"></span> Hallway Rejected</span>
-            </div>
-            <div class="absolute bottom-1.5 right-2 text-[10px] font-mono-tabular text-inkMuted pointer-events-none">
-              CORRIDOR WALL
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary pt-1">
-            <span>Cluster Ratio: <strong class="text-inkPrimary font-normal">1.8 BLE / Human</strong></span>
-            <span>Spatial Gradient: <strong id="spatialGradText" class="text-amberWarn font-normal">+190 ppm Core vs Perimeter</strong></span>
-          </div>
-        </div>
-
       </div>
     </section>
 
-    <!-- ROW 3: PHYSICS SANDBOX CONTROLS & SMART CALENDAR / BLE INSPECTOR (6 COLS / 6 COLS) -->
-    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      
-      <!-- LEFT 6 COLS: REAL-TIME MASS-BALANCE PHYSICS SANDBOX -->
-      <div class="lg:col-span-6 inst-panel p-4 flex flex-col justify-between">
-        <div class="flex flex-wrap items-center justify-between pb-3 border-b border-borderLine gap-2">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Transient Mass-Balance Physics Sandbox</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">Adjust physical room parameters to recompute forward ODE trajectories in real time.</p>
-          </div>
-          <button id="resetParamsBtn" class="text-[11px] font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-elevated border border-borderLine px-2.5 py-1 rounded transition">
-            Reset Defaults
-          </button>
+    <section class="inst-panel p-5 sm:p-6" aria-labelledby="forecastTitle">
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+        <div>
+          <h2 id="forecastTitle" class="text-xl font-semibold text-inkPrimary" style="font-family:'Cabinet Grotesk',sans-serif;letter-spacing:-0.02em">Next 4 hours</h2>
+          <p class="text-sm text-inkSecondary mt-1">Air from the people expected in the room, and what opening the windows would do.</p>
         </div>
-
-        <!-- 4 Precision Sliders Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 my-3.5">
-          
-          <!-- Slider 1: Room Volume V -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Room Volume (V):</span>
-              <span id="volValLabel" class="text-inkPrimary font-semibold">65 m³</span>
-            </div>
-            <input type="range" id="volSlider" min="20" max="250" step="5" value="65" class="inst-slider">
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>20 m³ (Study Pod)</span>
-              <span>120 m³</span>
-              <span>250 m³ (Seminar)</span>
-            </div>
-          </div>
-
-          <!-- Slider 2: Active BLE Headcount N -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Active BLE Headcount N(t):</span>
-              <span id="occValLabel" class="text-iceForecast font-semibold">8 Humans</span>
-            </div>
-            <input type="range" id="occSlider" min="0" max="25" step="1" value="8" class="inst-slider">
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>0 (Vacant)</span>
-              <span>12</span>
-              <span>25 (At Capacity)</span>
-            </div>
-          </div>
-
-          <!-- Slider 3: Metabolic Activity Rate G -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Metabolic CO₂ Rate (g_person):</span>
-              <span id="genValLabel" class="text-inkPrimary font-semibold">16.0 L/h (Sedentary)</span>
-            </div>
-            <input type="range" id="genSlider" min="14" max="26" step="1" value="16" class="inst-slider">
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>14 L/h (Quiet)</span>
-              <span>19 L/h</span>
-              <span>26 L/h (Active Pitch)</span>
-            </div>
-          </div>
-
-          <!-- Slider 4: Total Windows Installed -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Total Windows in Room:</span>
-              <span id="winCountLabel" class="text-tealOptimal font-semibold">2 Windows</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <input type="range" id="winSlider" min="1" max="8" step="1" value="2" class="inst-slider">
-              <span id="winCountNum" class="text-xs font-mono-tabular text-inkPrimary font-bold w-5 text-right">2</span>
-            </div>
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>1 Window</span>
-              <span>4 Windows</span>
-              <span>8 Windows</span>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Dynamic Individual Windows Manager & Live Timer Control Strip -->
-        <div class="mb-3 pt-3 border-t border-borderLine">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Per-Window Size &amp; Aperture Control</span>
-              <p class="text-[10px] text-inkSecondary mt-0.5">Adjust each window's individual area (m²). Timer starts automatically when windows open.</p>
-            </div>
-            <!-- Quick count buttons: Say how many windows opened -->
-            <div class="flex items-center gap-1.5 bg-canvas px-2 py-1 rounded border border-borderLine font-mono-tabular text-[11px]">
-              <span class="text-inkMuted text-[10px] uppercase">Opened:</span>
-              <div id="sandboxWinButtons" class="flex items-center gap-1">
-                <!-- Dynamically populated via JS -->
-              </div>
-            </div>
-          </div>
-
-          <!-- Individual Window Cards Grid -->
-          <div id="individualWindowsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2 max-h-[175px] overflow-y-auto inst-scroll pr-1">
-            <!-- Populated dynamically via JS -->
-          </div>
-
-          <!-- Total Aperture Summary & Timer Status Bar -->
-          <div class="mt-2.5 p-2 rounded bg-elevated border border-borderLine flex flex-wrap items-center justify-between text-[11px] font-mono-tabular gap-2">
-            <div class="flex items-center gap-2">
-              <span id="flushTimerPulse" class="w-2 h-2 rounded-full bg-inkMuted"></span>
-              <span id="flushTimerStatusLabel" class="text-inkSecondary">Windows Closed (0 m² active)</span>
-            </div>
-            <div class="flex items-center gap-3">
-              <span>Installed Total: <strong id="totalRoomWinArea" class="text-tealOptimal font-semibold">2.0 m²</strong></span>
-              <button id="weClosedThemBtn" type="button" class="hidden text-[10px] px-2.5 py-0.5 rounded bg-coralCrit/15 text-coralCrit border border-coralCrit/30 hover:bg-coralCrit hover:text-canvas transition font-semibold cursor-pointer">
-                We Closed Them (Stop Timer)
-              </button>
-            </div>
+        <label class="flex items-center gap-2 text-sm text-inkPrimary cursor-pointer select-none">
+          <input type="checkbox" id="sensorCheckbox" class="accent-tealOptimal cursor-pointer" checked>
+          Compare with a sensor
+        </label>
+      </div>
+      <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-inkSecondary mb-3">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 inline-block" style="background:#22C55E"></span> Air now</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 border-t-2 border-dashed inline-block" style="border-color:#0EA5E9"></span> If windows stay shut</span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 border-t-2 border-dotted inline-block" style="border-color:#22C55E"></span> If windows open</span>
+      </div>
+      <div class="relative w-full h-[320px]">
+        <canvas id="co2ForecastChart"></canvas>
+      </div>
+      <div class="mt-5 pt-4 border-t border-borderLine">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-inkSecondary mb-2">
+          <span class="text-inkPrimary font-medium">People</span>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2 inline-block rounded-sm" style="background:rgba(148,163,184,.35);border:1px solid #94A3B8"></span> Booked</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2 inline-block rounded-sm" style="background:rgba(14,165,233,.28);border:1px solid #0EA5E9"></span> Here now</span>
+            <span class="flex items-center gap-1.5"><span class="w-4 border-t-2 border-dashed inline-block" style="border-color:#22C55E"></span> Predicted</span>
           </div>
         </div>
+        <div class="relative w-full h-[140px]">
+          <canvas id="occupancyChart"></canvas>
+        </div>
+      </div>
+    </section>
 
-        <!-- Live Differential Equation Readout Box -->
-        <div class="inst-well p-3 font-mono-tabular text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div class="text-inkSecondary">
-            <span class="text-inkMuted uppercase block text-[10px]">Governing Mass-Balance Equation</span>
-            <span class="text-inkPrimary">C(t) = C_out + (G/Q)·1000·(1 - e<sup>-(Q/V)t</sup>) + (C₀ - C_out)·e<sup>-(Q/V)t</sup></span>
+    <section class="inst-panel p-5 sm:p-6" aria-labelledby="todayTitle">
+      <h2 id="todayTitle" class="text-xl font-semibold text-inkPrimary mb-4" style="font-family:'Cabinet Grotesk',sans-serif;letter-spacing:-0.02em">Today</h2>
+      <div id="bottomRightGrid">
+        <div id="calendarPane" class="space-y-3 text-sm">
+          <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-white border border-borderLine">
+            <div>
+              <div class="text-inkMuted font-mono-tabular text-[13px]">13:00–14:00</div>
+              <div class="text-inkPrimary font-medium mt-0.5">Quantitative Strategy Sync</div>
+              <div class="text-inkSecondary mt-0.5">10 booked · 7 here</div>
+            </div>
+            <span id="schedBadge1" class="text-[13px] px-2 py-1 rounded-lg bg-white text-inkSecondary border border-borderLine">Done</span>
           </div>
-          <div class="flex items-center gap-3 sm:border-l sm:border-borderLine sm:pl-3 text-right">
+          <div id="bufferRow" class="sched-buffer flex items-center justify-between gap-3 p-3 rounded-xl">
             <div>
-              <span class="text-[10px] text-inkMuted block">TOTAL G(t)</span>
-              <span id="currentGDisplay" class="text-amberWarn font-semibold">128.0 L/h</span>
+              <div class="text-tealOptimal font-mono-tabular text-[13px]">14:40–14:50</div>
+              <div class="text-inkPrimary font-medium mt-0.5">Fresh-air break</div>
+              <div id="bufferActionText" class="text-inkSecondary mt-0.5">Open 2 windows so the next meeting starts fresh.</div>
             </div>
+            <span id="bufferBadge" class="text-[13px] px-2 py-1 rounded-lg bg-white text-tealOptimal font-medium">Scheduled</span>
+          </div>
+          <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-white border border-borderLine">
             <div>
-              <span class="text-[10px] text-inkMuted block">AIRFLOW Q</span>
-              <span id="currentQDisplay" class="text-tealOptimal font-semibold">16.3 m³/h</span>
+              <div class="text-inkMuted font-mono-tabular text-[13px]">15:00–16:30</div>
+              <div class="text-inkPrimary font-medium mt-0.5">Architecture Review Board</div>
+              <div class="text-inkSecondary mt-0.5">14 booked · 11 expected</div>
             </div>
+            <span id="schedBadge2" class="text-[13px] px-2 py-1 rounded-lg bg-white text-iceForecast border border-iceForecast/25">Protected</span>
           </div>
         </div>
       </div>
+      <p class="mt-4 text-sm text-inkSecondary">
+        <span id="yieldText">Opening the windows keeps the afternoon usable.</span>
+        <span id="avoidedPeakText" class="block mt-1"></span>
+      </p>
+    </section>
 
-      <!-- RIGHT 6 COLS: AUTOMATED CALENDAR ACTUATION & BLE PACKET FILTER LOG -->
-      <div class="lg:col-span-6 inst-panel p-4 flex flex-col justify-between">
-        
-        <!-- Header with View Switcher Tabs -->
-        <div class="flex flex-wrap items-center justify-between pb-2.5 border-b border-borderLine gap-2">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Automated Schedule Buffers &amp; BLE Telemetry</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">HRT calendar buffer actuator paired with G-Research live RSSI packet filtering.</p>
-          </div>
+    <details class="inst-panel more">
+      <summary>Room setup</summary>
+      <div class="p-5 sm:p-6 space-y-8">
 
-          <div class="flex items-center bg-canvas p-0.5 rounded border border-borderLine text-[11px] font-mono-tabular">
-            <button id="tabBtnSplit" class="px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition">Split View</button>
-            <button id="tabBtnCal" class="px-2.5 py-1 rounded-sm text-inkSecondary hover:text-inkPrimary transition">Schedule Only</button>
-            <button id="tabBtnBle" class="px-2.5 py-1 rounded-sm text-inkSecondary hover:text-inkPrimary transition">BLE Log Only</button>
+        <div>
+          <div class="flex items-baseline justify-between gap-3 mb-4">
+            <h3 class="text-lg font-semibold text-inkPrimary" style="font-family:'Cabinet Grotesk',sans-serif">Adjust the room</h3>
+            <button id="resetParamsBtn" type="button" class="text-sm text-inkSecondary hover:text-inkPrimary border border-borderLine bg-white px-3 py-1.5 rounded-xl">Reset</button>
           </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">Volume</span><span id="volValLabel" class="font-medium">65 m³</span></div>
+              <input type="range" id="volSlider" min="20" max="250" step="5" value="65" class="inst-slider">
+            </div>
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">People here</span><span id="occValLabel" class="font-medium text-iceForecast">8</span></div>
+              <input type="range" id="occSlider" min="0" max="25" step="1" value="8" class="inst-slider">
+            </div>
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">How active</span><span id="genValLabel" class="font-medium">16.0 L/h (Sedentary)</span></div>
+              <input type="range" id="genSlider" min="14" max="26" step="1" value="16" class="inst-slider">
+            </div>
+            <div>
+              <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">Windows</span><span id="winCountLabel" class="font-medium text-tealOptimal">2 Windows</span></div>
+              <div class="flex items-center gap-2">
+                <input type="range" id="winSlider" min="1" max="8" step="1" value="2" class="inst-slider">
+                <span id="winCountNum" class="text-sm font-medium w-5 text-right">2</span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+            <span class="text-sm text-inkSecondary">How many are open</span>
+            <div id="sandboxWinButtons" class="flex items-center gap-1"></div>
+          </div>
+          <div id="individualWindowsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3"></div>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-inkSecondary">
+            <span class="flex items-center gap-2"><span id="flushTimerPulse" class="w-2 h-2 rounded-full bg-inkMuted"></span><span id="flushTimerStatusLabel">Windows closed</span></span>
+            <span>Glass <strong id="totalRoomWinArea" class="text-tealOptimal font-medium">2.0 m²</strong></span>
+            <button id="weClosedThemBtn" type="button" class="hidden text-sm px-3 py-1.5 rounded-xl bg-coralCrit text-white">We closed them</button>
+          </div>
+          <p class="mt-4 text-sm text-inkMuted">
+            CO₂ generated <span id="currentGDisplay" class="text-inkPrimary">128 L/h</span>
+            · fresh air <span id="currentQDisplay" class="text-inkPrimary">16 m³/h</span>
+          </p>
         </div>
 
-        <!-- Split Workspace: Calendar Timeline (Left) + BLE RSSI Stream (Right) -->
-        <div id="bottomRightGrid" class="grid grid-cols-1 md:grid-cols-12 gap-3 my-3">
-          
-          <!-- Sub-Pane A: Smart Calendar Buffer Timeline -->
-          <div id="calendarPane" class="md:col-span-7 space-y-2 font-mono-tabular text-xs">
-            <div class="text-[10px] uppercase text-inkMuted flex justify-between px-1">
-              <span>Room Schedule &amp; Ghost Priors</span>
-              <span class="text-iceForecast">Google Cal / Exchange API</span>
-            </div>
-
-            <!-- Booking 1 -->
-            <div class="inst-well p-2.5 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-inkMuted text-[11px]">13:00–14:00</span>
-                  <span class="text-inkPrimary font-medium font-sans">Quantitative Strategy Sync</span>
-                </div>
-                <div class="text-[11px] text-inkSecondary mt-0.5">
-                  Scheduled: 10 &bull; BLE Actual: <span class="text-inkPrimary">7</span> <span class="text-iceForecast">(30% Ghost Divergence)</span>
-                </div>
-              </div>
-              <span id="schedBadge1" class="text-[10px] px-1.5 py-0.5 rounded bg-elevated text-inkSecondary border border-borderLine">COMPLETED</span>
-            </div>
-
-            <!-- Auto-Injected Ventilation Buffer -->
-            <div id="bufferRow" class="p-2.5 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-tealOptimal font-semibold text-[11px]">14:40–14:50</span>
-                  <span class="text-tealOptimal font-medium font-sans">[AUTO-BUFFER] 10m Room Air Flush</span>
-                </div>
-                <div id="bufferActionText" class="text-[11px] text-inkSecondary mt-0.5">
-                  Action: Open 2 Windows (Q = 728 m³/h) &rarr; Drops CO₂ from 1,420 to 560 ppm
-                </div>
-              </div>
-              <span id="bufferBadge" class="text-[10px] px-1.5 py-0.5 rounded bg-tealOptimal/20 text-tealOptimal font-semibold">SCHEDULED</span>
-            </div>
-
-            <!-- Booking 2 -->
-            <div class="inst-well p-2.5 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-inkMuted text-[11px]">15:00–16:30</span>
-                  <span class="text-inkPrimary font-medium font-sans">Architecture Review Board</span>
-                </div>
-                <div class="text-[11px] text-inkSecondary mt-0.5">
-                  Scheduled: 14 &bull; ML Nowcast: <span class="text-iceForecast">11 Expected</span> (Pre-flushed to 96% CPI)
-                </div>
-              </div>
-              <span id="schedBadge2" class="text-[10px] px-1.5 py-0.5 rounded bg-iceForecast/10 text-iceForecast border border-iceForecast/25">PROTECTED</span>
+        <div>
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h3 class="text-lg font-semibold text-inkPrimary" style="font-family:'Cabinet Grotesk',sans-serif">Scanner</h3>
+            <div class="flex items-center bg-canvas p-0.5 rounded-xl border border-borderLine text-sm">
+              <button id="tabBtnSplit" type="button" class="px-2.5 py-1 rounded-lg text-inkSecondary">Both</button>
+              <button id="tabBtnCal" type="button" class="px-2.5 py-1 rounded-lg text-inkSecondary">Schedule</button>
+              <button id="tabBtnBle" type="button" class="px-2.5 py-1 rounded-lg bg-white text-inkPrimary">Scanner</button>
             </div>
           </div>
-
-          <!-- Sub-Pane B: Live BLE Packet Sniffer Log & Arduino Ingest Admin -->
-          <div id="bleLogPane" class="md:col-span-5 flex flex-col justify-between inst-well overflow-hidden">
-            <!-- Admin Function: Per-Arduino Hardware Interval & Control Strength -->
-            <div class="p-2 bg-surface border-b border-borderLine space-y-1.5 text-[10px] font-mono-tabular">
-              <div class="flex items-center justify-between">
-                <!-- Arduino Node Selector -->
-                <div class="flex items-center gap-1">
-                  <span class="text-inkMuted uppercase">Node:</span>
-                  <select id="arduinoNodeSelector" class="bg-elevated border border-borderLine rounded px-1.5 py-0.5 text-tealOptimal font-semibold text-[10px] focus:outline-none focus:border-tealOptimal cursor-pointer">
-                    <option value="0">uno-q-1 [Room Core]</option>
-                    <option value="1">uno-q-2 [Perimeter Guard]</option>
+          <div id="bleLogPane" class="inst-well overflow-hidden">
+            <div class="p-3 bg-white border-b border-borderLine space-y-2 text-sm">
+              <div class="flex items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-inkSecondary">
+                  Node
+                  <select id="arduinoNodeSelector" class="bg-canvas border border-borderLine rounded-lg px-2 py-1 text-inkPrimary">
+                    <option value="0">uno-q-1</option>
+                    <option value="1">uno-q-2</option>
                   </select>
-                </div>
-                <div class="flex items-center gap-1">
-                  <span id="arduinoOnlinePill" class="text-[9px] text-tealOptimal bg-tealOptimal/10 px-1.5 py-0.2 rounded border border-tealOptimal/20 flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal animate-ping"></span> ONLINE
-                  </span>
-                  <button id="quickFleetModalBtn" type="button" class="text-[9px] text-inkSecondary hover:text-inkPrimary bg-elevated border border-borderLine px-1.5 py-0.5 rounded transition cursor-pointer" title="Open Full Arduino Fleet Admin Console">
-                    FLEET ⚙
-                  </button>
+                </label>
+                <div class="flex items-center gap-2">
+                  <span id="arduinoOnlinePill" class="text-tealOptimal text-sm">Online</span>
+                  <button id="quickFleetModalBtn" type="button" class="text-sm text-inkSecondary border border-borderLine rounded-lg px-2 py-1">Fleet</button>
                 </div>
               </div>
-
-              <!-- Tuning Row: Interval & Control Strength (Tx Power) -->
-              <div class="grid grid-cols-2 gap-2 pt-1 border-t border-borderLine/40">
-                <!-- Interval Tuning -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <div class="flex justify-between items-center mb-0.5">
-                    <span class="text-inkMuted">Send Interval:</span>
-                    <span id="bleIntervalDisplay" class="text-tealOptimal font-bold">2.4s</span>
-                  </div>
-                  <input type="range" id="bleIntervalSlider" min="0.5" max="15" step="0.5" value="2.4" class="inst-slider w-full cursor-pointer" title="Adjust Arduino BLE transmit frequency">
+                  <div class="flex justify-between mb-1 text-inkSecondary"><span>Interval</span><span id="bleIntervalDisplay" class="text-inkPrimary font-medium">2.4s</span></div>
+                  <input type="range" id="bleIntervalSlider" min="0.5" max="15" step="0.5" value="2.4" class="inst-slider w-full">
                 </div>
-                <!-- Control Strength / Tx Power Tuning -->
                 <div>
-                  <div class="flex justify-between items-center mb-0.5">
-                    <span class="text-inkMuted">Control Strength:</span>
-                    <span id="bleStrengthDisplay" class="text-iceForecast font-bold">+4 dBm</span>
-                  </div>
-                  <select id="bleStrengthSelect" class="w-full bg-elevated border border-borderLine rounded px-1 py-0.5 text-iceForecast font-semibold text-[10px] focus:outline-none focus:border-iceForecast cursor-pointer">
-                    <option value="+8 dBm">+8 dBm (Max Boost · ~35m)</option>
-                    <option value="+4 dBm" selected>+4 dBm (High · ~20m)</option>
-                    <option value="0 dBm">0 dBm (Standard · ~10m)</option>
-                    <option value="-4 dBm">-4 dBm (Medium · ~5m)</option>
-                    <option value="-12 dBm">-12 dBm (Localized · ~2m)</option>
+                  <div class="flex justify-between mb-1 text-inkSecondary"><span>Range</span><span id="bleStrengthDisplay" class="text-inkPrimary font-medium">+4 dBm</span></div>
+                  <select id="bleStrengthSelect" class="w-full bg-canvas border border-borderLine rounded-lg px-2 py-1 text-inkPrimary">
+                    <option value="+8 dBm">+8 dBm</option>
+                    <option value="+4 dBm" selected>+4 dBm</option>
+                    <option value="0 dBm">0 dBm</option>
+                    <option value="-4 dBm">-4 dBm</option>
+                    <option value="-12 dBm">-12 dBm</option>
                   </select>
                 </div>
               </div>
-
-              <!-- Push Button & Status -->
-              <div class="flex items-center justify-between pt-0.5 text-[9px]">
-                <span class="text-inkMuted" id="arduinoPacketCounterText">Node: uno-q-1 · Heartbeat 2s</span>
-                <button id="deployBleConfigBtn" type="button" class="px-2 py-0.5 rounded bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/40 hover:bg-tealOptimal hover:text-canvas transition font-semibold cursor-pointer shadow-xs" title="Transmit configuration to selected Arduino board">
-                  Deploy Config (PUT /ingest/config)
-                </button>
+              <div class="flex items-center justify-between gap-2">
+                <span id="arduinoPacketCounterText" class="text-inkMuted text-[13px]">uno-q-1</span>
+                <button id="deployBleConfigBtn" type="button" class="text-sm font-medium px-3 py-1.5 rounded-xl bg-tealOptimal text-canvas">Save scanner</button>
               </div>
             </div>
-
-            <div class="px-2.5 py-1 bg-elevated border-b border-borderLine flex items-center justify-between text-[10px] font-mono-tabular text-inkSecondary">
-              <span>BLE UUID HASH</span>
-              <span>NODE // RSSI</span>
-              <span>STATE</span>
-            </div>
-            <div id="blePacketStream" class="h-[128px] overflow-y-auto divide-y divide-borderLine/50 text-[11px] font-mono-tabular inst-scroll">
-              <!-- Populated dynamically via JS -->
-            </div>
+            <div id="blePacketStream" class="h-36 overflow-y-auto divide-y divide-borderLine text-sm inst-scroll"></div>
           </div>
-
-        </div>
-
-        <!-- Bottom Summary Strip -->
-        <div class="pt-2 border-t border-borderLine flex flex-wrap items-center justify-between text-[11px] font-mono-tabular text-inkSecondary gap-2">
-          <span id="yieldText">Intervention Yield: <strong class="text-tealOptimal font-normal">+34.2% Afternoon Cognitive Preservation</strong></span>
-          <span id="avoidedPeakText">Avoided Peak: <strong class="text-coralCrit font-normal">2,380 ppm</strong> &rarr; Capped at <strong class="text-tealOptimal font-normal">1,350 ppm</strong></span>
         </div>
 
       </div>
-
-    </section>
+    </details>
 
   </main>
 
-  <!-- =====================================================================
-       FOOTER
-       ===================================================================== -->
-  <footer class="border-t border-borderLine bg-surface py-2.5 px-4 text-[11px] font-mono-tabular text-inkMuted mt-4">
-    <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <strong class="text-inkSecondary font-medium">CAELUM TELEMETRY SYSTEMS</strong> // HackTheBurgh 2026 — G-Research ("Make the Invisible Visible") &amp; Hudson River Trading ("Predictions &amp; Decision Making")
-      </div>
-      <div class="flex items-center gap-4">
-        <span>Model: Transient Mass-Balance + Harvard COGfx</span>
-        <span>&bull;</span>
-        <span>University of Edinburgh, School of Informatics</span>
-      </div>
-    </div>
+  <footer class="px-6 py-6 text-sm text-inkMuted">
+    <div class="max-w-[1100px] mx-auto">Caelum · HackTheBurgh 2026 · University of Edinburgh</div>
   </footer>
+
 
   <!-- =====================================================================
        MODAL: ONBOARD NEW ROOM ZONE WITH CUSTOM SETTINGS
        ===================================================================== -->
-  <div id="addRoomModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-canvas/80 backdrop-blur-sm hidden">
-    <div class="bg-surface border border-borderLine rounded-lg shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
-      
+  <div id="addRoomModal"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inkPrimary/35 backdrop-blur-sm hidden">
+    <div
+      class="bg-surface border border-borderLine rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+
       <!-- Modal Header -->
       <div class="px-5 py-3.5 border-b border-borderLine flex items-center justify-between bg-elevated">
         <div class="flex items-center gap-2.5">
-          <div class="w-6 h-6 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-center text-tealOptimal">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          <div
+            class="w-6 h-6 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-center text-tealOptimal">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </div>
           <div>
-            <h3 class="text-xs font-bold font-mono-tabular uppercase tracking-wider text-inkPrimary">Zone Onboarding // New Room Specification</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">Configure room volume, headcount priors, and custom window apertures.</p>
+            <h3 class="text-xs font-bold font-mono-tabular uppercase tracking-wider text-inkPrimary">Zone Onboarding //
+              New Room Specification</h3>
+            <p class="text-[11px] text-inkSecondary mt-0.5">Configure room volume, headcount priors, and custom window
+              apertures.</p>
           </div>
         </div>
-        <button id="closeAddRoomModalBtn" type="button" class="text-inkMuted hover:text-inkPrimary p-1 rounded transition text-sm cursor-pointer">✕</button>
+        <button id="closeAddRoomModalBtn" type="button"
+          class="text-inkMuted hover:text-inkPrimary p-1 rounded transition text-sm cursor-pointer">✕</button>
       </div>
 
       <!-- Modal Body Form -->
       <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto inst-scroll font-mono-tabular text-xs">
         <div>
-          <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Room Name &amp; Campus Location</label>
-          <input type="text" id="newRoomName" placeholder="e.g. Bayes Centre — Robotics Lab 2.01" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
+          <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Room Name &amp; Campus
+            Location</label>
+          <input type="text" id="newRoomName" placeholder="e.g. Bayes Centre — Robotics Lab 2.01"
+            class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Room Volume (V in m³)</label>
-            <input type="number" id="newRoomVol" min="15" max="500" step="5" value="85" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
+            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Room Volume (V in
+              m³)</label>
+            <input type="number" id="newRoomVol" min="15" max="500" step="5" value="85"
+              class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
             <span class="text-[10px] text-inkMuted mt-0.5 block">Pod: 30m³ · Seminar: 140m³</span>
           </div>
           <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Initial Baseline CO₂ (ppm)</label>
-            <input type="number" id="newRoomCo2" min="420" max="2500" step="10" value="1150" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
+            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Initial Baseline CO₂
+              (ppm)</label>
+            <input type="number" id="newRoomCo2" min="420" max="2500" step="10" value="1150"
+              class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
             <span class="text-[10px] text-inkMuted mt-0.5 block">Outdoor: 420 ppm</span>
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Expected BLE Headcount N(t)</label>
-            <input type="number" id="newRoomOcc" min="0" max="50" step="1" value="6" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
+            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Expected BLE Headcount
+              N(t)</label>
+            <input type="number" id="newRoomOcc" min="0" max="50" step="1" value="6"
+              class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
             <span class="text-[10px] text-inkMuted mt-0.5 block">Active filtered devices</span>
           </div>
           <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Calendar Prior (Booked)</label>
-            <input type="number" id="newRoomSched" min="0" max="50" step="1" value="8" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
+            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Calendar Prior
+              (Booked)</label>
+            <input type="number" id="newRoomSched" min="0" max="50" step="1" value="8"
+              class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
             <span class="text-[10px] text-inkMuted mt-0.5 block">Google Cal expected</span>
           </div>
         </div>
@@ -981,13 +822,16 @@
         <div class="pt-3 border-t border-borderLine">
           <div class="flex items-center justify-between mb-2">
             <div>
-              <label class="text-inkPrimary text-[11px] font-semibold uppercase tracking-wider">Number of Windows</label>
+              <label class="text-inkPrimary text-[11px] font-semibold uppercase tracking-wider">Number of
+                Windows</label>
               <span class="text-[10px] text-inkMuted block">Configure custom area for each window</span>
             </div>
             <div class="flex items-center gap-1.5 bg-elevated p-0.5 rounded border border-borderLine">
-              <button type="button" id="modalDecWinBtn" class="w-6 h-6 rounded bg-canvas border border-borderLine hover:border-inkMuted text-inkPrimary flex items-center justify-center font-bold transition cursor-pointer">-</button>
+              <button type="button" id="modalDecWinBtn"
+                class="w-6 h-6 rounded bg-canvas border border-borderLine hover:border-inkMuted text-inkPrimary flex items-center justify-center font-bold transition cursor-pointer">-</button>
               <span id="modalWinCountLabel" class="w-6 text-center text-tealOptimal font-bold">2</span>
-              <button type="button" id="modalIncWinBtn" class="w-6 h-6 rounded bg-canvas border border-borderLine hover:border-inkMuted text-inkPrimary flex items-center justify-center font-bold transition cursor-pointer">+</button>
+              <button type="button" id="modalIncWinBtn"
+                class="w-6 h-6 rounded bg-canvas border border-borderLine hover:border-inkMuted text-inkPrimary flex items-center justify-center font-bold transition cursor-pointer">+</button>
             </div>
           </div>
 
@@ -1000,10 +844,12 @@
 
       <!-- Modal Footer Actions -->
       <div class="px-5 py-3 border-t border-borderLine bg-elevated flex items-center justify-end gap-2.5">
-        <button id="cancelAddRoomBtn" type="button" class="px-3.5 py-1.5 rounded text-xs font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-canvas border border-borderLine transition cursor-pointer">
+        <button id="cancelAddRoomBtn" type="button"
+          class="px-3.5 py-1.5 rounded text-xs font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-canvas border border-borderLine transition cursor-pointer">
           Cancel
         </button>
-        <button id="saveAddRoomBtn" type="button" class="px-4 py-1.5 rounded text-xs font-mono-tabular font-medium text-canvas bg-tealOptimal hover:bg-tealOptimal/90 transition shadow cursor-pointer">
+        <button id="saveAddRoomBtn" type="button"
+          class="px-4 py-1.5 rounded text-xs font-mono-tabular font-medium text-canvas bg-tealOptimal hover:bg-tealOptimal/90 transition shadow cursor-pointer">
           Save &amp; Activate Zone
         </button>
       </div>
@@ -1014,21 +860,31 @@
   <!-- =====================================================================
        MODAL: ARDUINO BLE HARDWARE FLEET & CONTROL STRENGTH ADMIN
        ===================================================================== -->
-  <div id="arduinoAdminModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-canvas/80 backdrop-blur-sm hidden">
-    <div class="bg-surface border border-borderLine rounded-lg shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
-      
+  <div id="arduinoAdminModal"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inkPrimary/35 backdrop-blur-sm hidden">
+    <div
+      class="bg-surface border border-borderLine rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+
       <!-- Header -->
       <div class="px-5 py-3.5 border-b border-borderLine flex items-center justify-between bg-elevated">
         <div class="flex items-center gap-2.5">
-          <div class="w-6 h-6 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-center text-tealOptimal">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="4"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          <div
+            class="w-6 h-6 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-center text-tealOptimal">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="20" rx="4" />
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+            </svg>
           </div>
           <div>
-            <h3 class="text-xs font-bold font-mono-tabular uppercase tracking-wider text-inkPrimary">Arduino BLE Hardware Fleet // Admin Console</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">Adjust BLE transmission intervals and RF control strength (Tx power in dBm) per microcontroller.</p>
+            <h3 class="text-xs font-bold font-mono-tabular uppercase tracking-wider text-inkPrimary">Arduino BLE
+              Hardware Fleet // Admin Console</h3>
+            <p class="text-[11px] text-inkSecondary mt-0.5">Adjust BLE transmission intervals and RF control strength
+              (Tx power in dBm) per microcontroller.</p>
           </div>
         </div>
-        <button id="closeArduinoAdminModalBtn" type="button" class="text-inkMuted hover:text-inkPrimary p-1 rounded transition text-sm cursor-pointer">✕</button>
+        <button id="closeArduinoAdminModalBtn" type="button"
+          class="text-inkMuted hover:text-inkPrimary p-1 rounded transition text-sm cursor-pointer">✕</button>
       </div>
 
       <!-- Body -->
@@ -1038,27 +894,31 @@
           <!-- Dynamically populated via JS -->
         </div>
 
-        <!-- Live Dispatched Payload Box -->
+        <!-- Config payload preview box (not transmitted) -->
         <div class="p-3 rounded bg-canvas border border-borderLine text-[10px]">
           <div class="flex items-center justify-between text-inkMuted uppercase mb-1">
-            <span>Hardware Dispatch Payload (PUT /ingest/config)</span>
-            <span class="text-tealOptimal">HTTP 201 Response Sync</span>
+            <span>Config Payload Preview (PUT /ingest/config)</span>
+            <span class="text-amberWarn">PREVIEW · sent via Deploy Config</span>
           </div>
-          <pre id="modalPayloadPreview" class="text-tealOptimal font-mono-tabular whitespace-pre-wrap leading-relaxed overflow-x-auto text-[10px] p-2 bg-surface/50 rounded border border-borderLine/50"></pre>
+          <pre id="modalPayloadPreview"
+            class="text-tealOptimal font-mono-tabular whitespace-pre-wrap leading-relaxed overflow-x-auto text-[10px] p-2 bg-surface/50 rounded border border-borderLine/50"></pre>
         </div>
       </div>
 
       <!-- Footer -->
       <div class="px-5 py-3 border-t border-borderLine bg-elevated flex items-center justify-between gap-2.5">
-        <button id="modalAddArduinoNodeBtn" type="button" class="px-3 py-1.5 rounded text-xs font-mono-tabular text-tealOptimal hover:text-tealOptimal/80 bg-tealOptimal/10 border border-tealOptimal/20 transition cursor-pointer flex items-center gap-1">
+        <button id="modalAddArduinoNodeBtn" type="button"
+          class="px-3 py-1.5 rounded text-xs font-mono-tabular text-tealOptimal hover:text-tealOptimal/80 bg-tealOptimal/10 border border-tealOptimal/20 transition cursor-pointer flex items-center gap-1">
           + Register Arduino Node
         </button>
         <div class="flex items-center gap-2">
-          <button id="cancelArduinoAdminModalBtn" type="button" class="px-3.5 py-1.5 rounded text-xs font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-canvas border border-borderLine transition cursor-pointer">
+          <button id="cancelArduinoAdminModalBtn" type="button"
+            class="px-3.5 py-1.5 rounded text-xs font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-canvas border border-borderLine transition cursor-pointer">
             Close
           </button>
-          <button id="saveArduinoAdminModalBtn" type="button" class="px-4 py-1.5 rounded text-xs font-mono-tabular font-medium text-canvas bg-tealOptimal hover:bg-tealOptimal/90 transition shadow cursor-pointer">
-            Deploy All to Fleet (PUT /config)
+          <button id="saveArduinoAdminModalBtn" type="button"
+            class="px-4 py-1.5 rounded text-xs font-mono-tabular font-medium text-canvas bg-tealOptimal hover:bg-tealOptimal/90 transition shadow cursor-pointer">
+            Save Fleet Config
           </button>
         </div>
       </div>
@@ -1097,6 +957,15 @@
       return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
 
+    function paintWindowButton(state, variant) {
+      const card = document.getElementById('kpiControlCard');
+      const headerBtn = document.getElementById('toggleWindowBtn');
+      if (card) card.setAttribute('data-state', state);
+      if (headerBtn) {
+        headerBtn.className = 'mt-4 w-full flex items-center justify-center gap-2 text-sm font-semibold px-3 py-2.5 rounded-xl transition cursor-pointer ' + variant;
+      }
+    }
+
     function updateTimerDisplayUI() {
       // Flush stopwatch + countdown now come from the shared engine (sim-time)
       const flush = Caelum.FLUSH;
@@ -1125,15 +994,16 @@
         // Card 4 Readouts
         if (cdDisplay) {
           cdDisplay.innerText = formatted;
-          cdDisplay.className = 'text-2xl font-bold font-mono-tabular text-tealOptimal animate-pulse';
+          cdDisplay.className = 'metric-num';
+          cdDisplay.style.color = '#15803D';
         }
         if (timerLabel) {
-          timerLabel.innerHTML = '● FLUSH ACTIVE (STOPWATCH)';
-          timerLabel.className = 'text-[10px] font-mono-tabular uppercase text-tealOptimal block font-semibold';
+          timerLabel.innerText = 'Windows are open';
+          timerLabel.className = 'metric-k text-tealOptimal';
         }
-        if (durationSubLabel) durationSubLabel.innerText = 'STATUS & LOAD';
+        if (durationSubLabel) durationSubLabel.innerText = '';
         if (flushDurDisplay) {
-          flushDurDisplay.innerText = `${STATE.openWindowCount}/${STATE.windows.length} Win Open (${STATE.totalOpenArea.toFixed(1)} m²)`;
+          flushDurDisplay.innerText = `${STATE.openWindowCount} of ${STATE.windows.length} open`;
         }
         if (activeTimerBadge) activeTimerBadge.classList.remove('hidden');
         if (cardFlushBtn) {
@@ -1145,14 +1015,13 @@
         }
 
         // Header Action Button
-        if (headerBtn) {
-          headerBtn.className = 'flex items-center gap-2 text-xs font-mono-tabular font-medium px-3 py-1.5 rounded-md bg-tealOptimal text-canvas border border-tealOptimal transition cursor-pointer shadow';
-        }
+        paintWindowButton('open', 'btn-go');
         if (headerLabel) {
-          headerLabel.innerHTML = `Flushing: <strong>${formattedDigital}</strong> (${STATE.openWindowCount} Win) — Mark Closed`;
+          headerLabel.innerText = 'Close windows';
         }
         if (headerDot) {
-          headerDot.className = 'w-2 h-2 rounded-full bg-canvas animate-ping';
+          headerDot.className = 'w-2 h-2 rounded-full bg-white animate-ping';
+          headerDot.style.background = '';
         }
 
         // Sandbox Status Bar
@@ -1165,7 +1034,7 @@
         // CAD Badge
         if (badge) {
           const achOpen = (getCurrentAirflowQ() / STATE.roomVolume).toFixed(1);
-          badge.innerText = `${achOpen} ACH NATURAL FLUSH`;
+          badge.innerText = `${achOpen} air changes an hour`;
           badge.className = 'text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-tealOptimal/15 text-tealOptimal border border-tealOptimal/30';
         }
 
@@ -1178,24 +1047,32 @@
       } else {
         // Closed state
         if (timerLabel) {
-          timerLabel.innerText = rec.over ? 'THRESHOLD EXCEEDED (1,000 PPM)' : 'TIME TO 1,000 PPM';
-          timerLabel.className = 'text-[10px] font-mono-tabular uppercase text-inkMuted block';
+          timerLabel.innerText = rec.over ? 'Open windows now' : (rec.minutesUntilStuffy == null ? 'Next window' : 'Gets stuffy in');
+          timerLabel.className = 'metric-k';
         }
-        if (durationSubLabel) durationSubLabel.innerText = 'FLUSH DURATION';
+        if (durationSubLabel) durationSubLabel.innerText = '';
         if (cdDisplay) {
           if (rec.over) {
-            cdDisplay.innerText = 'T - 00m 00s';
-            cdDisplay.className = 'text-2xl font-bold font-mono-tabular text-coralCrit';
+            cdDisplay.innerText = 'Now';
+            cdDisplay.className = 'metric-num text-inkPrimary';
           } else if (rec.minutesUntilStuffy == null) {
-            cdDisplay.innerText = 'NO BREACH';
-            cdDisplay.className = 'text-2xl font-bold font-mono-tabular text-tealOptimal';
+            cdDisplay.innerText = 'Not needed';
+            cdDisplay.className = 'metric-num';
+            cdDisplay.style.color = '#15803D';
           } else {
-            cdDisplay.innerText = `T - ${formatTimerStr(Math.round(rec.minutesUntilStuffy * 60))}`;
-            cdDisplay.className = 'text-2xl font-bold font-mono-tabular text-tealOptimal';
+            const mins = Math.max(1, Math.round(rec.minutesUntilStuffy));
+            cdDisplay.innerText = mins >= 90
+              ? `${Math.floor(mins / 60)} h${mins % 60 ? ' ' + (mins % 60) + ' min' : ''}`
+              : `${mins} min`;
+            cdDisplay.className = 'metric-num text-inkPrimary';
+            cdDisplay.style.color = '';
           }
+          if (rec.over || rec.minutesUntilStuffy != null) cdDisplay.style.color = '';
         }
         if (flushDurDisplay) {
-          flushDurDisplay.innerText = `${rec.flushMinutes} mins (${rec.windows} Win)`;
+          flushDurDisplay.innerText = rec.over || rec.minutesUntilStuffy != null
+            ? `${rec.flushMinutes} min · ${rec.windows} windows`
+            : 'Air stays fresh';
         }
         if (activeTimerBadge) activeTimerBadge.classList.add('hidden');
         if (cardFlushBtn) {
@@ -1210,15 +1087,15 @@
           }
         }
 
-        // Header Action Button
-        if (headerBtn) {
-          headerBtn.className = 'flex items-center gap-2 text-xs font-mono-tabular font-medium px-3 py-1.5 rounded-md bg-tealOptimal/10 hover:bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 transition cursor-pointer';
-        }
+        const soon = rec.minutesUntilStuffy != null && rec.minutesUntilStuffy <= 30;
+        const urge = rec.over || soon;
+        paintWindowButton(rec.over ? 'now' : (soon ? 'soon' : 'calm'), urge ? 'btn-warn' : 'btn-quiet');
         if (headerLabel) {
-          headerLabel.innerText = `Trigger Window Flush (${Math.min(2, STATE.windows.length)} Win)`;
+          headerLabel.innerText = 'Open windows';
         }
         if (headerDot) {
-          headerDot.className = 'w-2 h-2 rounded-full bg-tealOptimal';
+          headerDot.className = 'w-2 h-2 rounded-full';
+          headerDot.style.background = urge ? '#3b2300' : '#22C55E';
         }
 
         // Sandbox Status Bar
@@ -1228,13 +1105,13 @@
           if (lastFlushRecord) {
             timerStatusLabel.innerHTML = `<span class="text-inkSecondary">Windows Closed</span> · <span class="text-tealOptimal">Last flush: ${lastFlushRecord.durationStr} (-${lastFlushRecord.drop} ppm)</span>`;
           } else {
-            timerStatusLabel.innerText = `Windows Closed (0 m² active · Infiltration 0.25 ACH)`;
+            timerStatusLabel.innerText = 'Windows closed';
           }
         }
 
         // CAD Badge
         if (badge) {
-          badge.innerText = '0.25 ACH INFILTRATION';
+          badge.innerText = 'Windows closed';
           badge.className = 'text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-canvas text-inkSecondary border border-borderLine';
         }
 
@@ -1267,12 +1144,11 @@
       const btn0 = document.createElement('button');
       btn0.type = 'button';
       const is0Active = openCount === 0;
-      btn0.className = `text-[10px] font-mono-tabular px-2 py-0.5 rounded border transition cursor-pointer ${
-        is0Active
+      btn0.className = `text-[10px] font-mono-tabular px-2 py-0.5 rounded border transition cursor-pointer ${is0Active
           ? 'bg-elevated text-inkPrimary border-tealOptimal font-semibold shadow-xs'
           : 'bg-canvas text-inkMuted border-borderLine hover:text-inkSecondary hover:border-inkMuted'
-      }`;
-      btn0.innerText = '0 Closed';
+        }`;
+      btn0.innerText = 'None';
       btn0.title = 'Close all windows and stop timer';
       btn0.addEventListener('click', () => {
         Caelum.closeAllWindows();
@@ -1284,12 +1160,11 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         const isCurrentCount = openCount === i;
-        btn.className = `text-[10px] font-mono-tabular px-2 py-0.5 rounded border transition cursor-pointer ${
-          isCurrentCount
+        btn.className = `text-[10px] font-mono-tabular px-2 py-0.5 rounded border transition cursor-pointer ${isCurrentCount
             ? 'bg-tealOptimal/20 text-tealOptimal border-tealOptimal font-bold shadow-xs'
             : 'bg-canvas text-inkSecondary border-borderLine hover:text-inkPrimary hover:border-inkMuted'
-        }`;
-        btn.innerText = i === totalWin && totalWin > 1 ? `All (${i})` : `${i} Win`;
+          }`;
+        btn.innerText = i === totalWin && totalWin > 1 ? 'All' : String(i);
         btn.title = `Say you opened ${i} window${i > 1 ? 's' : ''}`;
         const countToSet = i;
         btn.addEventListener('click', () => {
@@ -1306,9 +1181,8 @@
 
       STATE.windows.forEach((win, idx) => {
         const card = document.createElement('div');
-        card.className = `p-2 rounded bg-elevated border transition flex flex-col justify-between gap-1.5 ${
-          win.isOpen ? 'border-tealOptimal/50 bg-tealOptimal/5' : 'border-borderLine'
-        }`;
+        card.className = `p-2 rounded bg-elevated border transition flex flex-col justify-between gap-1.5 ${win.isOpen ? 'border-tealOptimal/50 bg-tealOptimal/5' : 'border-borderLine'
+          }`;
 
         card.innerHTML = `
           <div class="flex items-center justify-between gap-2">
@@ -1316,11 +1190,10 @@
               <span class="w-2 h-2 rounded-full ${win.isOpen ? 'bg-tealOptimal animate-pulse' : 'bg-inkMuted'} shrink-0"></span>
               <span class="text-xs font-mono-tabular font-medium text-inkPrimary truncate" title="${win.name}">${win.name}</span>
             </div>
-            <button type="button" class="toggle-win-btn text-[10px] font-mono-tabular font-semibold px-2 py-0.5 rounded border transition shrink-0 cursor-pointer ${
-              win.isOpen
-                ? 'bg-tealOptimal text-canvas border-tealOptimal hover:bg-tealOptimal/90'
-                : 'bg-canvas text-inkMuted border-borderLine hover:text-inkPrimary hover:border-inkMuted'
-            }">
+            <button type="button" class="toggle-win-btn text-[10px] font-mono-tabular font-semibold px-2 py-0.5 rounded border transition shrink-0 cursor-pointer ${win.isOpen
+            ? 'bg-tealOptimal text-canvas border-tealOptimal hover:bg-tealOptimal/90'
+            : 'bg-canvas text-inkMuted border-borderLine hover:text-inkPrimary hover:border-inkMuted'
+          }">
               ${win.isOpen ? 'OPEN' : 'CLOSED'}
             </button>
           </div>
@@ -1375,6 +1248,48 @@
       "+15m", "+30m", "+45m", "+1h00", "+1h30", "+2h00", "+2h30", "+3h00", "+4h00"
     ];
 
+    function colorForPpm(v) {
+      if (v == null || Number.isNaN(v)) return '#0EA5E9';
+      return v < 750 ? '#22C55E' : v < 1000 ? '#65A30D' : v < 1400 ? '#F59E0B' : '#EF4444';
+    }
+
+    const zonePlugin = {
+      id: 'caelumZones',
+      beforeDatasetsDraw(chart) {
+        const area = chart.chartArea;
+        const y = chart.scales.y;
+        if (!area || !y) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        const band = (lo, hi, col) => {
+          const top = Math.max(area.top, Math.min(area.bottom, y.getPixelForValue(hi)));
+          const bot = Math.max(area.top, Math.min(area.bottom, y.getPixelForValue(lo)));
+          if (bot - top < 1) return;
+          ctx.fillStyle = col;
+          ctx.fillRect(area.left, top, area.right - area.left, bot - top);
+        };
+        band(0, 750, 'rgba(34,197,94,.10)');
+        band(1000, 1400, 'rgba(245,158,11,.10)');
+        band(1400, 1e7, 'rgba(239,68,68,.10)');
+        const y1k = y.getPixelForValue(1000);
+        if (y1k > area.top && y1k < area.bottom) {
+          ctx.setLineDash([5, 5]);
+          ctx.strokeStyle = 'rgba(180,83,9,.55)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(area.left, y1k);
+          ctx.lineTo(area.right, y1k);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#B45309';
+          ctx.font = '600 11px "JetBrains Mono", monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText('Stuffy 1,000', area.right - 6, y1k - 5);
+        }
+        ctx.restore();
+      }
+    };
+
     const crosshairPlugin = {
       id: 'instCrosshair',
       afterDraw: (chart) => {
@@ -1389,7 +1304,7 @@
           ctx.moveTo(x, topY);
           ctx.lineTo(x, bottomY);
           ctx.lineWidth = 1;
-          ctx.strokeStyle = 'rgba(156, 163, 175, 0.35)';
+          ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
           ctx.setLineDash([3, 3]);
           ctx.stroke();
           ctx.restore();
@@ -1397,44 +1312,76 @@
       }
     };
 
+    // Minutes from "now" for each occupancy-chart slot (matches TIME_LABELS).
+    const OCC_OFFSETS_MIN = [-120, -105, -90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 90, 120, 150, 180, 240];
+
+    function occupancyPredictionSeries() {
+      const tl = Caelum.forecastTimeline(240, 5);
+      return OCC_OFFSETS_MIN.map((min) => {
+        if (min < 0) return null;
+        let best = tl[0];
+        for (let i = 1; i < tl.length; i++) {
+          if (Math.abs(tl[i].t - min) < Math.abs(best.t - min)) best = tl[i];
+        }
+        return Math.round(best.occ);
+      });
+    }
+
+    function syncOccupancyChart() {
+      if (!occChart) return;
+      const predicted = occupancyPredictionSeries();
+      const datasets = occChart.data.datasets;
+      if (datasets[2]) datasets[2].data = predicted;
+      const actual = datasets[1] && datasets[1].data;
+      if (actual && actual.length > 8) {
+        actual[8] = STATE.occupancy;
+        for (let i = 9; i < actual.length; i++) actual[i] = null;
+      }
+      const nums = datasets.reduce((acc, ds) => acc.concat(ds.data), []).filter((v) => typeof v === 'number');
+      const peak = nums.length ? Math.max.apply(null, nums) : STATE.occupancy;
+      occChart.options.scales.y.max = Math.max(12, Math.ceil((peak + 1) / 5) * 5);
+      occChart.update('none');
+    }
+
     function initCharts() {
       const series = Caelum.buildForecastArrays();
       const ctx1 = document.getElementById('co2ForecastChart').getContext('2d');
 
       co2Chart = new Chart(ctx1, {
         type: 'line',
-        plugins: [crosshairPlugin],
+        plugins: [zonePlugin, crosshairPlugin],
         data: {
           labels: TIME_LABELS,
           datasets: [
             {
               label: 'Virtual CO₂ C(t)',
               data: series.pastSeries,
-              borderColor: '#F3F4F6',
-              backgroundColor: 'rgba(243, 244, 246, 0.05)',
-              borderWidth: 2,
+              borderColor: '#22C55E',
+              backgroundColor: 'rgba(14, 165, 233, 0.08)',
+              borderWidth: 2.5,
               fill: true,
-              tension: 0.25,
+              tension: 0.35,
+              segment: { borderColor: (ctx) => colorForPpm(ctx.p1.parsed.y) },
               pointRadius: (ctx) => ctx.dataIndex === 8 ? 5 : 0,
-              pointBackgroundColor: '#F3F4F6',
-              pointBorderColor: '#0A0B0D',
-              pointBorderWidth: 2
+              pointBackgroundColor: '#FFFFFF',
+              pointBorderColor: (ctx) => colorForPpm(ctx.raw),
+              pointBorderWidth: 2.5
             },
             {
               label: 'Aranet4 NDIR Ground Truth',
               data: series.groundTruthSeries,
-              borderColor: '#9CA3AF',
+              borderColor: '#64748B',
               borderWidth: 1.5,
               borderDash: [3, 3],
               pointRadius: 2,
-              pointBackgroundColor: '#9CA3AF',
+              pointBackgroundColor: '#64748B',
               tension: 0.2,
               hidden: !STATE.showGroundTruth
             },
             {
-              label: '4h ML Forecast (Unmitigated)',
+              label: '4h Forecast (Unmitigated)',
               data: series.forecastSeries,
-              borderColor: '#60A5FA',
+              borderColor: '#0EA5E9',
               borderWidth: 2,
               borderDash: [5, 4],
               tension: 0.3,
@@ -1443,23 +1390,23 @@
             {
               label: 'Optimal Window Flush Path',
               data: series.optimalSeries,
-              borderColor: '#2DD4BF',
-              borderWidth: 2,
+              borderColor: '#22C55E',
+              borderWidth: 2.5,
               borderDash: [2, 3],
               tension: 0.25,
               pointRadius: 0
             },
             {
-              label: '+1σ Monte Carlo Upper',
+              label: 'Forecast upper bound',
               data: series.upperSeries,
               borderColor: 'transparent',
-              backgroundColor: 'rgba(96, 165, 250, 0.11)',
+              backgroundColor: 'rgba(14, 165, 233, 0.14)',
               fill: '+1',
               tension: 0.3,
               pointRadius: 0
             },
             {
-              label: '-1σ Monte Carlo Lower',
+              label: 'Forecast lower bound',
               data: series.lowerSeries,
               borderColor: 'transparent',
               fill: false,
@@ -1475,15 +1422,15 @@
           plugins: {
             legend: { display: false },
             tooltip: {
-              backgroundColor: '#111317',
-              borderColor: '#22262F',
+              backgroundColor: '#0F172A',
+              borderColor: '#0F172A',
               borderWidth: 1,
-              titleColor: '#F3F4F6',
-              bodyColor: '#9CA3AF',
-              titleFont: { family: 'IBM Plex Mono', size: 11, weight: '600' },
-              bodyFont: { family: 'IBM Plex Mono', size: 11 },
+              titleColor: '#F8FAFC',
+              bodyColor: '#CBD5E1',
+              titleFont: { family: 'JetBrains Mono', size: 11, weight: '600' },
+              bodyFont: { family: 'JetBrains Mono', size: 11 },
               padding: 10,
-              filter: (item) => !item.dataset.label.includes('Monte Carlo'),
+              filter: (item) => !item.dataset.label.includes('bound'),
               callbacks: {
                 label: (ctx) => ` ${ctx.dataset.label}: ${ctx.raw !== null ? ctx.raw + ' ppm' : '—'}`
               }
@@ -1491,17 +1438,17 @@
           },
           scales: {
             x: {
-              grid: { color: 'rgba(34, 38, 47, 0.6)' },
-              ticks: { color: '#6B7280', font: { family: 'IBM Plex Mono', size: 10 } }
+              grid: { color: 'rgba(226, 232, 240, 0.95)' },
+              ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 10 } }
             },
             y: {
               min: 380,
               max: 2600,
-              grid: { color: 'rgba(34, 38, 47, 0.6)' },
+              grid: { color: 'rgba(226, 232, 240, 0.95)' },
               ticks: {
-                color: '#6B7280',
-                font: { family: 'IBM Plex Mono', size: 10 },
-                callback: (val) => val + ' ppm'
+                color: '#64748B',
+                font: { family: 'JetBrains Mono', size: 10 },
+                callback: (val) => val.toLocaleString('en-GB')
               }
             }
           }
@@ -1510,7 +1457,7 @@
 
       const ctx2 = document.getElementById('occupancyChart').getContext('2d');
       const calSchedule = [4, 4, 4, 4, 10, 10, 10, 10, 12, 12, 12, 12, 14, 14, 14, 14, 4, 2];
-      const bleActual =   [3, 3, 4, 4,  7,  7,  7,  7, STATE.occupancy, STATE.occupancy, 9, 9, 11, 11, 11, 10, 3, 1];
+      const bleActual = [3, 3, 4, 4, 7, 7, 7, 7, STATE.occupancy].concat(Array(9).fill(null));
 
       occChart = new Chart(ctx2, {
         type: 'line',
@@ -1518,24 +1465,39 @@
           labels: TIME_LABELS,
           datasets: [
             {
-              label: 'Scheduled Calendar Prior',
+              label: 'Calendar scheduled',
               data: calSchedule,
-              borderColor: '#6B7280',
-              backgroundColor: 'rgba(107, 114, 128, 0.08)',
+              borderColor: '#94A3B8',
+              backgroundColor: 'rgba(148, 163, 184, 0.16)',
               borderWidth: 1.2,
               stepped: true,
               fill: true,
               pointRadius: 0
             },
             {
-              label: 'BLE Filtered + ML Nowcast N(t)',
+              label: 'Live headcount',
               data: bleActual,
-              borderColor: '#60A5FA',
-              backgroundColor: 'rgba(96, 165, 250, 0.18)',
+              borderColor: '#0EA5E9',
+              backgroundColor: 'rgba(14, 165, 233, 0.16)',
               borderWidth: 1.8,
               stepped: true,
               fill: true,
               pointRadius: 0
+            },
+            {
+              label: 'Predicted occupancy',
+              data: occupancyPredictionSeries(),
+              borderColor: '#22C55E',
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              borderDash: [5, 4],
+              stepped: true,
+              fill: false,
+              pointRadius: (ctx) => ctx.dataIndex === 8 ? 3.5 : 0,
+              pointBackgroundColor: '#22C55E',
+              pointBorderColor: '#FFFFFF',
+              pointBorderWidth: 1.5,
+              spanGaps: false
             }
           ]
         },
@@ -1546,11 +1508,17 @@
           plugins: {
             legend: { display: false },
             tooltip: {
-              backgroundColor: '#111317',
-              borderColor: '#22262F',
+              backgroundColor: '#0F172A',
+              borderColor: '#0F172A',
               borderWidth: 1,
-              titleFont: { family: 'IBM Plex Mono', size: 10 },
-              bodyFont: { family: 'IBM Plex Mono', size: 10 }
+              titleColor: '#F8FAFC',
+              bodyColor: '#CBD5E1',
+              titleFont: { family: 'JetBrains Mono', size: 10 },
+              bodyFont: { family: 'JetBrains Mono', size: 10 },
+              filter: (item) => item.raw !== null && item.raw !== undefined,
+              callbacks: {
+                label: (item) => ` ${item.dataset.label}: ${item.raw} people`
+              }
             }
           },
           scales: {
@@ -1558,8 +1526,8 @@
             y: {
               min: 0,
               max: 20,
-              grid: { color: 'rgba(34, 38, 47, 0.45)' },
-              ticks: { color: '#6B7280', font: { family: 'IBM Plex Mono', size: 9 }, stepSize: 5 }
+              grid: { color: 'rgba(226, 232, 240, 0.95)' },
+              ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 9 }, stepSize: 5 }
             }
           }
         }
@@ -1581,6 +1549,12 @@
     }
 
     function renderCadTopology() {
+      const dw = cadCanvas.offsetWidth || 380;
+      const dh = cadCanvas.offsetHeight || 165;
+      if (cadCanvas.width !== dw || cadCanvas.height !== dh) {
+        cadCanvas.width = dw;
+        cadCanvas.height = dh;
+      }
       const w = cadCanvas.width;
       const h = cadCanvas.height;
       cadCtx.clearRect(0, 0, w, h);
@@ -1597,20 +1571,20 @@
         w * 0.5, h * 0.52, roomW * 0.55
       );
       if (STATE.co2 < 750) {
-        centerGrad.addColorStop(0, 'rgba(45, 212, 191, 0.14)');
-        centerGrad.addColorStop(1, 'rgba(45, 212, 191, 0.02)');
+        centerGrad.addColorStop(0, 'rgba(34, 197, 94, 0.22)');
+        centerGrad.addColorStop(1, 'rgba(34, 197, 94, 0.02)');
       } else if (STATE.co2 < 1350) {
-        centerGrad.addColorStop(0, 'rgba(251, 191, 36, 0.18)');
-        centerGrad.addColorStop(1, 'rgba(251, 191, 36, 0.02)');
+        centerGrad.addColorStop(0, 'rgba(245, 158, 11, 0.24)');
+        centerGrad.addColorStop(1, 'rgba(245, 158, 11, 0.03)');
       } else {
-        centerGrad.addColorStop(0, 'rgba(248, 113, 113, 0.24)');
-        centerGrad.addColorStop(1, 'rgba(248, 113, 113, 0.03)');
+        centerGrad.addColorStop(0, 'rgba(239, 68, 68, 0.26)');
+        centerGrad.addColorStop(1, 'rgba(239, 68, 68, 0.03)');
       }
       cadCtx.fillStyle = centerGrad;
       cadCtx.fillRect(padX, padY, roomW, roomH);
 
       // 2. Architectural Room Perimeter Walls
-      cadCtx.strokeStyle = '#4B5563';
+      cadCtx.strokeStyle = '#94A3B8';
       cadCtx.lineWidth = 1.5;
       cadCtx.strokeRect(padX, padY, roomW, roomH);
 
@@ -1619,8 +1593,8 @@
       const tableH = roomH * 0.36;
       const tableX = (w - tableW) / 2;
       const tableY = (h - tableH) / 2;
-      cadCtx.strokeStyle = '#22262F';
-      cadCtx.fillStyle = 'rgba(17, 19, 23, 0.75)';
+      cadCtx.strokeStyle = '#CBD5E1';
+      cadCtx.fillStyle = 'rgba(255, 255, 255, 0.88)';
       cadCtx.fillRect(tableX, tableY, tableW, tableH);
       cadCtx.strokeRect(tableX, tableY, tableW, tableH);
 
@@ -1637,11 +1611,11 @@
         const wx = padX + ((i + 1) * roomW) / (displayCount + 1) - winWidth / 2;
 
         // Clear wall segment for window opening
-        cadCtx.fillStyle = '#0A0B0D';
+        cadCtx.fillStyle = '#F8FAFC';
         cadCtx.fillRect(wx, padY - 2, winWidth, 4);
 
         // Window sash line
-        cadCtx.strokeStyle = win.isOpen ? '#2DD4BF' : '#4B5563';
+        cadCtx.strokeStyle = win.isOpen ? '#15803D' : '#94A3B8';
         cadCtx.lineWidth = 2;
         cadCtx.beginPath();
         cadCtx.moveTo(wx, padY);
@@ -1649,14 +1623,14 @@
         cadCtx.stroke();
 
         // Window index label (W1, W2, etc.)
-        cadCtx.fillStyle = win.isOpen ? '#2DD4BF' : '#6B7280';
-        cadCtx.font = '8px "IBM Plex Mono", monospace';
+        cadCtx.fillStyle = win.isOpen ? '#15803D' : '#64748B';
+        cadCtx.font = '8px "JetBrains Mono", monospace';
         cadCtx.textAlign = 'center';
         cadCtx.fillText(`W${i + 1}`, wx + winWidth / 2, padY - 6);
 
         // Laminar airflow streamlines if this window is currently open
         if (win.isOpen) {
-          cadCtx.strokeStyle = 'rgba(45, 212, 191, 0.45)';
+          cadCtx.strokeStyle = 'rgba(21, 128, 61, 0.55)';
           cadCtx.lineWidth = Math.max(1, Math.min(2.5, (win.area || 1.0) * 1.2));
           cadCtx.setLineDash([4, 4]);
           cadCtx.lineDashOffset = -flowTick * 12;
@@ -1671,7 +1645,7 @@
       // Update glazing annotation in CAD
       const cadGlazingLabel = document.getElementById('cadGlazingLabel');
       if (cadGlazingLabel) {
-        cadGlazingLabel.innerText = `EXTERIOR GLAZING // ${totalWindows} WINDOWS (${openCount} OPEN · ${STATE.totalOpenArea.toFixed(1)} m²)`;
+        cadGlazingLabel.innerText = `${openCount} of ${totalWindows} open`;
       }
 
       // 5. RSSI Sniffer Perimeter Boundary (Dynamic scale by Control Strength Tx Power)
@@ -1684,7 +1658,7 @@
         '-12 dBm': 0.58
       }[activeNode.strength] || 1.0;
 
-      cadCtx.strokeStyle = 'rgba(96, 165, 250, 0.35)';
+      cadCtx.strokeStyle = 'rgba(14, 165, 233, 0.55)';
       cadCtx.lineWidth = 1.2;
       cadCtx.setLineDash([3, 3]);
       cadCtx.beginPath();
@@ -1703,26 +1677,26 @@
         const pulseR = 5 + Math.abs(Math.sin(flowTick * 1.6 + nIdx)) * (isSelected ? 9 * strengthRadScale : 5);
         cadCtx.beginPath();
         cadCtx.arc(nx, ny, pulseR, 0, Math.PI * 2);
-        cadCtx.fillStyle = isSelected ? 'rgba(45, 212, 191, 0.2)' : 'rgba(96, 165, 250, 0.12)';
+        cadCtx.fillStyle = isSelected ? 'rgba(21, 128, 61, 0.18)' : 'rgba(14, 165, 233, 0.16)';
         cadCtx.fill();
 
         // IC Chip Body
-        cadCtx.fillStyle = isSelected ? '#14B8A6' : '#2563EB';
+        cadCtx.fillStyle = isSelected ? '#15803D' : '#0369A1';
         cadCtx.fillRect(nx - 7, ny - 5, 14, 10);
         cadCtx.strokeStyle = '#FFFFFF';
         cadCtx.lineWidth = 0.8;
         cadCtx.strokeRect(nx - 7, ny - 5, 14, 10);
 
         // Chip Pins
-        cadCtx.fillStyle = '#9CA3AF';
+        cadCtx.fillStyle = '#64748B';
         [-4, 0, 4].forEach(px => {
           cadCtx.fillRect(nx + px - 1, ny - 7, 2, 2);
           cadCtx.fillRect(nx + px - 1, ny + 5, 2, 2);
         });
 
         // Label
-        cadCtx.fillStyle = isSelected ? '#2DD4BF' : '#93C5FD';
-        cadCtx.font = '7px "IBM Plex Mono", monospace';
+        cadCtx.fillStyle = isSelected ? '#15803D' : '#0369A1';
+        cadCtx.font = '7px "JetBrains Mono", monospace';
         cadCtx.textAlign = 'center';
         cadCtx.fillText(`${node.id} (${node.strength})`, nx, ny + 13);
       });
@@ -1738,12 +1712,12 @@
 
         cadCtx.beginPath();
         cadCtx.arc(nx, ny, 5.5, 0, Math.PI * 2);
-        cadCtx.fillStyle = 'rgba(96, 165, 250, 0.18)';
+        cadCtx.fillStyle = 'rgba(14, 165, 233, 0.18)';
         cadCtx.fill();
 
         cadCtx.beginPath();
         cadCtx.arc(nx, ny, 2.5, 0, Math.PI * 2);
-        cadCtx.fillStyle = '#60A5FA';
+        cadCtx.fillStyle = '#0EA5E9';
         cadCtx.fill();
       }
 
@@ -1753,7 +1727,7 @@
         const hy = h - 9;
         cadCtx.beginPath();
         cadCtx.arc(hx + Math.sin(flowTick * 0.5 + idx) * 6, hy, 2.2, 0, Math.PI * 2);
-        cadCtx.fillStyle = '#6B7280';
+        cadCtx.fillStyle = '#94A3B8';
         cadCtx.fill();
       });
 
@@ -1927,10 +1901,9 @@
       row.innerHTML = `
         <span class="${accepted ? 'text-inkPrimary' : 'text-inkMuted'} font-mono-tabular">${uuid}</span>
         <span class="${accepted ? 'text-iceForecast font-medium' : 'text-inkMuted'} font-mono-tabular">${node.id} // ${rssi} dBm</span>
-        <span class="text-[9px] px-1.5 py-0.2 rounded font-mono-tabular ${
-          accepted
-            ? 'bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25'
-            : 'bg-canvas text-inkMuted border border-borderLine'
+        <span class="text-[9px] px-1.5 py-0.2 rounded font-mono-tabular ${accepted
+          ? 'bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25'
+          : 'bg-canvas text-inkMuted border border-borderLine'
         }">${accepted ? 'IN-ROOM' : 'FILTERED'}</span>
       `;
       stream.prepend(row);
@@ -2080,6 +2053,17 @@
       preview.innerText = JSON.stringify(payload, null, 2);
     }
 
+    /* Non-blocking toast (replaces alert()) */
+    let toastTimer = null;
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), 5000);
+    }
+
     function saveArduinoAdminModal() {
       const updatedNodes = collectNodesFromModal();
       saveArduinoNodes(updatedNodes);
@@ -2087,7 +2071,10 @@
       syncArduinoUI();
       closeArduinoAdminModal();
       const active = getActiveArduinoNode();
-      alert(`Arduino Fleet Configuration Deployed!\n\nHTTP PUT /ingest/config -> 201 Created\nNodes Online: ${updatedNodes.length}\nActive Node: ${active.id} [${active.name}]\nTx Control Strength: ${active.strength}\nSend Interval: ${active.interval.toFixed(1)}s\nPerimeter Filter: RSSI > -65 dBm`);
+      const live = window.hackaburgerBackend && window.hackaburgerBackend.enabled;
+      showToast(`Fleet config saved locally (${updatedNodes.length} node(s)). ` + (live
+        ? 'Use "Deploy Config" on a node to send it to the board.'
+        : 'Backend not connected — nothing was sent to hardware.'));
     }
 
     /* =====================================================================
@@ -2107,48 +2094,36 @@
       document.getElementById('co2ValDisplay').innerText = co2Round.toLocaleString();
       document.getElementById('co2DeltaDisplay').innerText = `+${Math.max(0, co2Round - 420)} ppm`;
       const rateSign = ratePpmMin >= 0 ? '+' : '';
-      document.getElementById('co2RateBadge').innerText = `${rateSign}${ratePpmMin} ppm/min`;
+      document.getElementById('co2RateBadge').innerText = `${rateSign}${Math.round(ratePpmMin)} / min`;
 
       const kpiCo2Card = document.getElementById('kpiCo2Card');
       const statusBadge = document.getElementById('co2StatusBadge');
       const headerStateBadge = document.getElementById('headerStateBadge');
       const rateBadge = document.getElementById('co2RateBadge');
 
-      kpiCo2Card.classList.remove('kpi-accent-teal', 'kpi-accent-amber', 'kpi-accent-coral');
-      if (co2Round < 750) {
-        kpiCo2Card.classList.add('kpi-accent-teal');
-        statusBadge.innerText = 'OPTIMAL AIR';
-        statusBadge.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25';
-        headerStateBadge.innerText = 'STATE: OPTIMAL AIRFLOW';
-        headerStateBadge.className = 'text-tealOptimal font-medium';
-        rateBadge.className = 'ml-auto text-xs font-mono-tabular text-tealOptimal';
-      } else if (co2Round < 1350) {
-        kpiCo2Card.classList.add('kpi-accent-amber');
-        statusBadge.innerText = 'STAGNANT';
-        statusBadge.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-amberWarn/10 text-amberWarn border border-amberWarn/25';
-        headerStateBadge.innerText = 'STATE: MODERATE STAGNATION';
-        headerStateBadge.className = 'text-amberWarn font-medium';
-        rateBadge.className = 'ml-auto text-xs font-mono-tabular text-amberWarn';
-      } else {
-        kpiCo2Card.classList.add('kpi-accent-coral');
-        statusBadge.innerText = 'HYPERCAPNIC RISK';
-        statusBadge.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-coralCrit/10 text-coralCrit border border-coralCrit/25';
-        headerStateBadge.innerText = 'STATE: CRITICAL CO₂ CEILING';
-        headerStateBadge.className = 'text-coralCrit font-medium';
-        rateBadge.className = 'ml-auto text-xs font-mono-tabular text-coralCrit';
-      }
+      const tone = co2Round < 750 ? 'fresh' : co2Round < 1000 ? 'warm' : co2Round < 1400 ? 'stuffy' : 'bad';
+      const toneInk = { fresh: '#15803D', warm: '#4D7C0F', stuffy: '#B45309', bad: '#B91C1C' }[tone];
+      const toneLabel = { fresh: 'Fresh', warm: 'Getting warm', stuffy: 'Stuffy', bad: 'Very stuffy' }[tone];
+      kpiCo2Card.classList.remove('tone-fresh', 'tone-warm', 'tone-stuffy', 'tone-bad');
+      kpiCo2Card.classList.add('tone-' + tone);
+      document.body.setAttribute('data-tone', tone);
+      statusBadge.innerText = toneLabel;
+      headerStateBadge.innerText = toneLabel;
+      headerStateBadge.className = 'state-pill';
+      document.getElementById('co2ValDisplay').style.color = toneInk;
+      rateBadge.style.color = toneInk;
 
       // Top KPI 2: Harvard Cognitive Performance Index
       document.getElementById('cpiValDisplay').innerText = `${cog.overall.toFixed(1)}%`;
       const stratDrop = 100 - cog.strategic;
-      document.getElementById('stratDeficitDisplay').innerText = `Strategic: -${stratDrop}%`;
+      document.getElementById('stratDeficitDisplay').innerText = `Strategic thinking −${stratDrop}%`;
       const hourlyDrag = (STATE.occupancy * 45.0 * (stratDrop / 100.0)).toFixed(2);
       document.getElementById('payrollLossDisplay').innerText = `-£${hourlyDrag} / hr`;
-      document.getElementById('cogCeilingPill').innerText = `${cog.overall.toFixed(1)}% CEILING`;
+      document.getElementById('cogCeilingPill').innerText = `${Math.round(cog.overall)}%`;
 
       // Top KPI 3: BLE Occupancy
       document.getElementById('bleCountDisplay').innerText = STATE.occupancy;
-      document.getElementById('calCountDisplay').innerText = `${STATE.scheduledCount} Booked`;
+      document.getElementById('calCountDisplay').innerText = String(STATE.scheduledCount);
       const ghostPct = STATE.scheduledCount > 0
         ? Math.round((Math.abs(STATE.scheduledCount - STATE.occupancy) / STATE.scheduledCount) * 100)
         : 0;
@@ -2168,27 +2143,32 @@
       document.getElementById('currentGDisplay').innerText = `${gTotal.toFixed(1)} L/h`;
       document.getElementById('currentQDisplay').innerText = `${qCurrent.toFixed(1)} m³/h`;
 
-      // Cognitive Progress Bars
-      document.getElementById('domainRoutine').innerText = `${cog.routine}%`;
-      document.getElementById('barRoutine').style.width = `${cog.routine}%`;
+      // Focus, by kind of work
+      const paintDomain = (valueId, barId, value, emphasize) => {
+        const good = value >= 80;
+        const mid = value >= 65;
+        const label = document.getElementById(valueId);
+        const bar = document.getElementById(barId);
+        label.innerText = `${value}%`;
+        label.className = `font-mono-tabular${emphasize ? ' font-medium' : ''}`;
+        label.style.color = good ? '#15803D' : mid ? '#B45309' : '#B91C1C';
+        bar.style.width = `${value}%`;
+        bar.style.backgroundColor = good ? '#22C55E' : mid ? '#F59E0B' : '#EF4444';
+      };
+      paintDomain('domainRoutine', 'barRoutine', cog.routine);
+      paintDomain('domainFocused', 'barFocused', cog.focused);
+      paintDomain('domainInfo', 'barInfo', cog.info);
+      paintDomain('domainCrisis', 'barCrisis', cog.crisis);
+      paintDomain('domainStrategic', 'barStrategic', cog.strategic, true);
 
-      document.getElementById('domainFocused').innerText = `${cog.focused}%`;
-      document.getElementById('barFocused').style.width = `${cog.focused}%`;
-
-      document.getElementById('domainInfo').innerText = `${cog.info}%`;
-      document.getElementById('barInfo').style.width = `${cog.info}%`;
-
-      document.getElementById('domainCrisis').innerText = `${cog.crisis}%`;
-      document.getElementById('barCrisis').style.width = `${cog.crisis}%`;
-
-      document.getElementById('domainStrategic').innerText = `${cog.strategic}%`;
-      document.getElementById('barStrategic').style.width = `${cog.strategic}%`;
-
-      document.getElementById('latencyPenalty').innerText = `${cog.reactionPenalty}% speed penalty`;
+      const latencyEl = document.getElementById('latencyPenalty');
+      latencyEl.innerText = `${cog.reactionPenalty}%`;
+      const penalty = Math.abs(parseFloat(cog.reactionPenalty) || 0);
+      latencyEl.style.color = penalty >= 1.5 ? '#B91C1C' : penalty >= 0.05 ? '#B45309' : '#15803D';
 
       // Spatial Gradient label
       const gradDelta = STATE.isWindowOpen ? 35 : Math.round((co2Round - 420) * 0.22);
-      document.getElementById('spatialGradText').innerText = `+${gradDelta} ppm Core vs Perimeter`;
+      document.getElementById('spatialGradText').innerText = `+${gradDelta} ppm`;
 
       // Recompute Multi-Horizon Charts
       if (co2Chart && occChart) {
@@ -2201,9 +2181,7 @@
         co2Chart.data.datasets[5].data = updated.lowerSeries;
         co2Chart.update('none');
 
-        occChart.data.datasets[1].data[8] = STATE.occupancy;
-        occChart.data.datasets[1].data[9] = STATE.occupancy;
-        occChart.update('none');
+        syncOccupancyChart();
       }
 
       updateTimerDisplayUI();
@@ -2398,10 +2376,10 @@
 
       // Mode A: 8-hour day (fast-forward)
       const warpLabels = {
-        idle: 'Run 8-Hour Day (fast-forward)',
-        running: 'Pause 8-Hour Simulation',
-        paused: 'Resume 8-Hour Day (fast-forward)',
-        done: 'Replay 8-Hour Day (fast-forward)'
+        idle: 'Play the day',
+        running: 'Pause',
+        paused: 'Resume',
+        done: 'Play again'
       };
       byId('timeWarpIcon').innerText = d.warpPhase === 'running' ? '⏸' : '▶';
       byId('timeWarpText').innerText = warpLabels[d.warpPhase] || warpLabels.idle;
@@ -2409,7 +2387,7 @@
 
       // Mode B: 4-step guided demo
       const guided = d.mode === 'guided';
-      byId('guidedDemoText').innerText = guided ? `Guided Demo: step ${d.step}/${d.total} (Esc to exit)` : 'Guided Demo (4 steps)';
+      byId('guidedDemoText').innerText = guided ? `Step ${d.step} of ${d.total}` : 'Guided demo';
       byId('guidedDemoBtn').classList.toggle('border-tealOptimal', guided);
       byId('demoBar').classList.toggle('hidden', !guided);
       if (guided) {
@@ -2438,30 +2416,30 @@
       const nowMin = Caelum.clockMinutesOfDay();
       const [b1, buf, b2] = Caelum.SCHEDULE;
       const guided = d.mode === 'guided';
-      const pill = 'text-[10px] px-1.5 py-0.5 rounded ';
+      const pill = 'text-[13px] px-2 py-1 rounded-lg ';
       const setBadge = (id, text, cls) => { const el = byId(id); el.innerText = text; el.className = pill + cls; };
 
-      if (nowMin >= b1.end) setBadge('schedBadge1', 'COMPLETED', 'bg-elevated text-inkSecondary border border-borderLine');
-      else if (nowMin >= b1.start) setBadge('schedBadge1', 'IN PROGRESS', 'bg-amberWarn/10 text-amberWarn border border-amberWarn/25');
-      else setBadge('schedBadge1', 'UPCOMING', 'bg-elevated text-inkSecondary border border-borderLine');
+      if (nowMin >= b1.end) setBadge('schedBadge1', 'Done', 'bg-white text-inkSecondary border border-borderLine');
+      else if (nowMin >= b1.start) setBadge('schedBadge1', 'Now', 'bg-amberWarn/10 text-amberWarn');
+      else setBadge('schedBadge1', 'Later', 'bg-white text-inkSecondary border border-borderLine');
 
-      if (nowMin >= b2.end) setBadge('schedBadge2', 'COMPLETED', 'bg-elevated text-inkSecondary border border-borderLine');
-      else if (nowMin >= b2.start) setBadge('schedBadge2', 'IN PROGRESS', 'bg-amberWarn/10 text-amberWarn border border-amberWarn/25');
-      else setBadge('schedBadge2', 'PROTECTED', 'bg-iceForecast/10 text-iceForecast border border-iceForecast/25');
+      if (nowMin >= b2.end) setBadge('schedBadge2', 'Done', 'bg-white text-inkSecondary border border-borderLine');
+      else if (nowMin >= b2.start) setBadge('schedBadge2', 'Now', 'bg-amberWarn/10 text-amberWarn');
+      else setBadge('schedBadge2', 'Protected', 'bg-white text-iceForecast border border-iceForecast/25');
 
       const row = byId('bufferRow');
       row.classList.toggle('hidden', guided && d.step < 4);        // not inserted yet
       if (d.buffer) {
-        setBadge('bufferBadge', 'AUTO-INSERTED', 'bg-tealOptimal/20 text-tealOptimal font-semibold');
+        setBadge('bufferBadge', 'Added', 'bg-white text-tealOptimal font-medium');
         if (!bufferFlashed) {
           bufferFlashed = true;
           row.classList.remove('demo-flash'); void row.offsetWidth; row.classList.add('demo-flash');
         }
       } else {
         bufferFlashed = false;
-        if (nowMin >= buf.end) setBadge('bufferBadge', 'DONE', 'bg-elevated text-inkSecondary border border-borderLine');
-        else if (nowMin >= buf.start) setBadge('bufferBadge', 'ACTIVE', 'bg-tealOptimal text-canvas font-semibold');
-        else setBadge('bufferBadge', 'SCHEDULED', 'bg-tealOptimal/20 text-tealOptimal font-semibold');
+        if (nowMin >= buf.end) setBadge('bufferBadge', 'Done', 'bg-white text-inkSecondary border border-borderLine');
+        else if (nowMin >= buf.start) setBadge('bufferBadge', 'Now', 'bg-tealOptimal text-white font-medium');
+        else setBadge('bufferBadge', 'Scheduled', 'bg-white text-tealOptimal font-medium');
       }
 
       const actionEl = byId('bufferActionText');
@@ -2469,9 +2447,9 @@
       const avoidedEl = byId('avoidedPeakText');
       if (d.avoided) {
         const a = d.avoided;
-        actionEl.innerHTML = `Action: Open ${a.windows} Windows (Q = ${a.qFlush} m³/h) &rarr; Drops CO₂ from ${a.startCo2.toLocaleString()} to ${a.endCo2.toLocaleString()} ppm`;
-        yieldEl.innerHTML = `Intervention Yield: <strong class="text-tealOptimal font-normal">Focus capacity ${a.cpiUnmitigated.toFixed(0)}% &rarr; ${a.cpiActual.toFixed(0)}%</strong>`;
-        avoidedEl.innerHTML = `Avoided Peak: <strong class="text-coralCrit font-normal">${a.unmitigatedPeak.toLocaleString()} ppm</strong> (unmitigated, by 14:00) &rarr; Actual <strong class="text-tealOptimal font-normal">${a.actualPeak.toLocaleString()} ppm</strong>`;
+        actionEl.innerHTML = `Open ${a.windows} windows. Air falls from ${a.startCo2.toLocaleString()} to ${a.endCo2.toLocaleString()} ppm.`;
+        yieldEl.innerHTML = `Focus goes from ${a.cpiUnmitigated.toFixed(0)}% to ${a.cpiActual.toFixed(0)}%.`;
+        avoidedEl.innerHTML = `Without the break the air would reach ${a.unmitigatedPeak.toLocaleString()} ppm. With it, ${a.actualPeak.toLocaleString()} ppm.`;
       } else {
         actionEl.innerHTML = defaultBufferAction;
         yieldEl.innerHTML = defaultYield;
@@ -2553,6 +2531,22 @@
         shortcutsPanel.classList.toggle('hidden', !open);
         shortcutsBtn.setAttribute('aria-expanded', String(open));
       }
+      const settingsBtn = byId('settingsBtn');
+      const settingsPanel = byId('settingsPanel');
+      function setSettingsOpen(open) {
+        settingsPanel.classList.toggle('hidden', !open);
+        settingsBtn.setAttribute('aria-expanded', String(open));
+      }
+      settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setShortcutsOpen(false);
+        setSettingsOpen(settingsPanel.classList.contains('hidden'));
+      });
+      settingsPanel.addEventListener('click', (e) => { if (e.target.closest('button')) setSettingsOpen(false); });
+      document.addEventListener('click', (e) => {
+        if (!settingsPanel.contains(e.target)) setSettingsOpen(false);
+      });
+
       shortcutsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         setShortcutsOpen(shortcutsPanel.classList.contains('hidden'));
@@ -2604,7 +2598,7 @@
       if (deployBleBtn) {
         deployBleBtn.addEventListener('click', () => {
           const active = getActiveArduinoNode();
-          alert(`Arduino Hardware Ingest Configuration Deployed!\n\nTarget Hardware: ${active.id} (${active.name})\nRF Control Strength: ${active.strength}\nBLE Send Interval: ${active.interval.toFixed(1)}s\nPerimeter Filter: RSSI > -65 dBm\n\nDispatched via PUT /ingest/config.`);
+          showToast(`Config saved locally for ${active.id} (${active.strength}, ${active.interval.toFixed(1)}s). Backend not connected — nothing was sent to hardware.`);
         });
       }
 
@@ -2723,21 +2717,12 @@
 
       function setBottomTab(mode) {
         [btnSplit, btnCal, btnBle].forEach(b => {
-          b.className = 'px-2.5 py-1 rounded-sm text-inkSecondary hover:text-inkPrimary transition cursor-pointer';
+          b.className = 'px-2.5 py-1 rounded-lg text-inkSecondary hover:text-inkPrimary transition cursor-pointer';
         });
-        if (mode === 'split') {
-          btnSplit.className = 'px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition cursor-pointer';
-          calPane.className = 'md:col-span-7 space-y-2 font-mono-tabular text-xs';
-          blePane.className = 'md:col-span-5 flex flex-col justify-between inst-well overflow-hidden';
-        } else if (mode === 'cal') {
-          btnCal.className = 'px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition cursor-pointer';
-          calPane.className = 'md:col-span-12 space-y-2 font-mono-tabular text-xs';
-          blePane.className = 'hidden';
-        } else {
-          btnBle.className = 'px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition cursor-pointer';
-          calPane.className = 'hidden';
-          blePane.className = 'md:col-span-12 flex flex-col justify-between inst-well overflow-hidden';
-        }
+        const active = mode === 'split' ? btnSplit : mode === 'cal' ? btnCal : btnBle;
+        active.className = 'px-2.5 py-1 rounded-lg bg-white text-inkPrimary font-medium transition cursor-pointer';
+        calPane.className = 'space-y-3 text-sm';
+        blePane.className = mode === 'cal' ? 'hidden' : 'inst-well overflow-hidden';
       }
 
       btnSplit.addEventListener('click', () => setBottomTab('split'));
@@ -2759,5 +2744,8 @@
   </script>
   <!-- Backend connection (rooms, live occupancy, CO2 forecast, board fleet). Keep this after page scripts. -->
   <script src="backend.js"></script>
+  <div id="toast" role="status" aria-live="polite"
+    class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-xl px-4 py-2.5 rounded-md bg-elevated border border-amberWarn/40 text-xs font-mono-tabular text-inkPrimary shadow-2xl"></div>
 </body>
+
 </html>

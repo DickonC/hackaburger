@@ -35,7 +35,7 @@ The frontend architecture follows a **Dual-Persona Design** (Consumer-Friendly E
 - **Design System & Component Specs:** See [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) for UX principles, Swiss Grid layout rules, Fontshare typography, color palettes, and component selections.
 - **File layout (build-free, plain HTML/JS):**
   - [`index.html`](index.html): **Room view** (public, projector / door tablet). Light consumer persona: hero status, crowd gauge, focus capacity, next action, 4-hour forecast, today's schedule.
-  - [`admin.html`](admin.html): **Ops console** (dark "obsidian" dashboard): sandbox sliders, Arduino fleet, BLE log, charts, demo controls.
+  - [`admin.html`](admin.html): **Ops console** (same light palette as the room view): sandbox sliders, Arduino fleet, BLE log, charts, demo controls.
   - [`js/engine.js`](js/engine.js): shared engine (`window.Caelum`): rooms, state, mass-balance + Harvard COGfx models, forecast, simulation clock, demo modes, cross-tab sync. No DOM access.
   - [`Frontend mark-up`](Frontend%20mark-up): older single-file prototype, kept for reference only.
 - **Run it:** `python3 -m http.server 8080`, then open <http://localhost:8080/admin.html> and click **Open Room View** (or open `index.html` in a second window).

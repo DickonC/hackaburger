@@ -191,9 +191,18 @@ people_smoothed = round(median(recent_people_raw))
 
 ## 7. Working Reference Implementation
 
-A working, self-contained reference implementation containing both views, interactive sliders, and dual Chart.js instances is available in:
-- **`Frontend mark-up`**
-- **`index.html`**
+The two personas are now separate pages sharing one engine:
+
+| File | Persona | Notes |
+| :--- | :--- | :--- |
+| **`index.html`** | Consumer **Room view** (§3.2A palette, §5.1 layout) | Header with room switcher + SIMULATED badge, hero headline mapped from CO₂, Crowd / Focus / Next-action cards, 4-hour forecast with "Best time to book", today's schedule with the auto flush buffer. Light theme, responsive to phone width. |
+| **`admin.html`** | **Ops console** (§3.2B palette, §5.2 layout) | The dark dashboard (all panels, Arduino fleet, BLE log, sandbox) plus the Demo control group. |
+| **`js/engine.js`** | n/a | `window.Caelum`: STATE, mass-balance + COGfx models, `minutesUntil()`, forecast, sim clock, demo modes, `BroadcastChannel('caelum')` sync. Pure logic, no DOM. |
+| **`Frontend mark-up`** | Reference | Older single-file prototype; not modified. |
+
+**Two-screen sync.** Admin is the authority: it runs the simulation clock and demo modes and broadcasts a state snapshot after every change/tick. The room view renders snapshots and sends commands (`setOpenWindows`, `switchRoom`) back to admin. With no admin present (3 s timeout) the room view simulates locally.
+
+**Demo modes** (admin header): *8-Hour Day (fast-forward)* and the *4-Step Guided Demo* (fresh room, meeting fills the room, prediction fires, intervention with avoided-peak counterfactual). Shortcuts: `D` / `Shift+D` guided demo next/back, `S` 8-hour sim, `W` windows, `+` `-` occupancy, `R` reset, `Esc` exit demo / close dialogs, `?` hint.
 
 To run and preview locally:
 ```bash
@@ -203,7 +212,7 @@ python3 -m http.server 8080
 # Using Node / npx
 npx serve .
 ```
-Visit `http://localhost:8080` to toggle seamlessly between the Consumer and Admin interfaces.
+Visit `http://localhost:8080/admin.html`, click **Open Room View ↗**, and arrange the two windows side by side (or open `http://localhost:8080/` directly for the standalone room view).
 
 ---
 

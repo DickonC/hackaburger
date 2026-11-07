@@ -1,2981 +1,956 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CAELUM // Virtual CO₂ & Cognitive Performance Engine</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Fonts: Plus Jakarta Sans & IBM Plex Mono -->
+  <title>CAELUM — Room Air &amp; Focus</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Live room view: how crowded is it, how fresh is the air, and when to open a window.">
+  <!-- Fonts (DESIGN_SYSTEM.md §3.1): Cabinet Grotesk + General Sans (Fontshare), JetBrains Mono (numbers) -->
+  <link rel="preconnect" href="https://api.fontshare.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Chart.js for High-Precision Telemetry -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-            mono: ['"IBM Plex Mono"', 'monospace'],
-          },
-          colors: {
-            canvas: '#0A0B0D',
-            surface: '#111317',
-            elevated: '#171A20',
-            borderLine: '#22262F',
-            inkPrimary: '#F3F4F6',
-            inkSecondary: '#9CA3AF',
-            inkMuted: '#6B7280',
-            tealOptimal: '#2DD4BF',
-            iceForecast: '#60A5FA',
-            amberWarn: '#FBBF24',
-            coralCrit: '#F87171',
-          }
-        }
-      }
-    }
-  </script>
+  <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Chart.js (pinned) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    /* Institutional Dark Mode Base & Anti-AI Slop Rules */
-    * {
-      box-sizing: border-box;
+    /* =====================================================================
+       Consumer palette (DESIGN_SYSTEM.md §3.2A) + lime/red for the extremes
+       ===================================================================== */
+    :root {
+      --bg: #F8FAFC;
+      --card: rgba(255, 255, 255, 0.88);
+      --ink: #0F172A;
+      --muted: #64748B;
+      --line: #E2E8F0;
+
+      --fresh: #22C55E;  --fresh-bg: #DCFCE7;  --fresh-ink: #15803D;
+      --warm:  #65A30D;  --warm-bg:  #ECFCCB;  --warm-ink:  #4D7C0F;
+      --sky:   #0EA5E9;  --sky-bg:   #E0F2FE;  --sky-ink:   #0369A1;
+      --amber: #F59E0B;  --amber-bg: #FEF3C7;  --amber-ink: #B45309;
+      --red:   #EF4444;  --red-bg:   #FEE2E2;  --red-ink:   #B91C1C;
+
+      --font-display: 'Cabinet Grotesk', 'General Sans', system-ui, sans-serif;
+      --font-body: 'General Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+      --gutter: 16px;
+      --gap: 16px;
+      --radius: 20px;
     }
+    @media (min-width: 900px) { :root { --gutter: 24px; --gap: 24px; } }
+
+    /* Tone applies to hero / focus / badges. Set via data-tone on <body>. */
+    body[data-tone="fresh"]  { --tone: var(--fresh);  --tone-bg: var(--fresh-bg);  --tone-ink: var(--fresh-ink); }
+    body[data-tone="warm"]   { --tone: var(--warm);   --tone-bg: var(--warm-bg);   --tone-ink: var(--warm-ink); }
+    body[data-tone="stuffy"] { --tone: var(--amber);  --tone-bg: var(--amber-bg);  --tone-ink: var(--amber-ink); }
+    body[data-tone="bad"]    { --tone: var(--red);    --tone-bg: var(--red-bg);    --tone-ink: var(--red-ink); }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
-      background-color: #0A0B0D;
-      color: #F3F4F6;
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      letter-spacing: -0.015em;
-      overflow-x: hidden;
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(900px 420px at 90% -10%, var(--tone-bg, var(--fresh-bg)) 0%, transparent 70%),
+        radial-gradient(700px 360px at -10% 0%, var(--sky-bg) 0%, transparent 65%),
+        var(--bg);
+      background-repeat: no-repeat;
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.45;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      transition: background-color .4s ease;
     }
-    h1, h2, h3, .heading-tight {
-      letter-spacing: -0.025em;
-    }
-    .font-mono-tabular {
-      font-family: 'IBM Plex Mono', monospace;
+    h1, h2, h3, p { margin: 0; }
+    .num {
+      font-family: var(--font-mono);
       font-variant-numeric: tabular-nums;
       letter-spacing: -0.01em;
     }
-
-    /* Engineered Surface Card with 1px border & directional top light highlight */
-    .inst-panel {
-      background-color: #111317;
-      border: 1px solid #22262F;
-      border-top-color: rgba(255, 255, 255, 0.07);
-      border-radius: 6px;
-    }
-    .inst-panel-elevated {
-      background-color: #171A20;
-      border: 1px solid #22262F;
-      border-top-color: rgba(255, 255, 255, 0.08);
-      border-radius: 6px;
-    }
-    .inst-well {
-      background-color: #0A0B0D;
-      border: 1px solid #1C2029;
-      border-radius: 4px;
+    .display { font-family: var(--font-display); letter-spacing: -0.02em; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--gutter); }
+    .eyebrow {
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
     }
 
-    /* Subtle status indicator bar at top of KPI cards */
-    .kpi-accent-teal { border-top: 2px solid #2DD4BF; }
-    .kpi-accent-ice { border-top: 2px solid #60A5FA; }
-    .kpi-accent-amber { border-top: 2px solid #FBBF24; }
-    .kpi-accent-coral { border-top: 2px solid #F87171; }
+    /* ---------- Header ---------- */
+    header.top {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(248, 250, 252, 0.82);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+    }
+    .top-row { display: flex; align-items: center; gap: 12px 16px; padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+    .logo { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: .04em; }
+    .logo-mark {
+      width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+      background: var(--ink); color: #fff;
+    }
+    .pills { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; padding: 2px; }
+    .pills::-webkit-scrollbar { display: none; }
+    .pill {
+      flex: 0 0 auto; border: 1px solid var(--line); background: #fff; color: var(--ink);
+      font: 500 14px/1 var(--font-body); padding: 9px 14px; border-radius: 999px; cursor: pointer;
+      transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .pill:hover { border-color: #CBD5E1; }
+    .pill[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .room-select {
+      display: none; flex: 1 1 140px; min-width: 0; font: 500 14px var(--font-body); color: var(--ink);
+      padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff;
+    }
+    @media (max-width: 639px) {
+      .pills { display: none; }
+      .room-select { display: block; }
+    }
+    .top-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+    .badge-sim {
+      display: inline-flex; align-items: center; gap: 6px;
+      font: 600 11px/1 var(--font-mono); letter-spacing: .06em;
+      padding: 7px 10px; border-radius: 999px; background: var(--amber-bg); color: var(--amber-ink);
+    }
+    .badge-sim i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); display: inline-block; }
+    .link-state { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+    .link-state i { width: 7px; height: 7px; border-radius: 50%; background: #94A3B8; display: inline-block; }
+    .link-state[data-link="admin"] i { background: var(--fresh); }
+    .link-state[data-link="standalone"] i { background: var(--sky); }
+    @media (max-width: 639px) { .link-state .txt { display: none; } }
+    .admin-link { font-size: 12px; color: var(--muted); text-decoration: none; padding: 4px 6px; border-radius: 6px; opacity: .8; }
+    .admin-link:hover { color: var(--ink); opacity: 1; background: rgba(15, 23, 42, .05); }
 
-    /* Precision Enterprise Sliders */
-    input[type="range"].inst-slider {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 4px;
-      background: #22262F;
-      border-radius: 2px;
-      outline: none;
+    /* ---------- Demo caption strip ---------- */
+    .demo-strip {
+      border-bottom: 1px solid var(--sky-bg); background: var(--sky-bg); color: var(--sky-ink);
     }
-    input[type="range"].inst-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 3px;
-      background: #F3F4F6;
-      border: 1px solid #0A0B0D;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.6);
-      cursor: pointer;
-      transition: background-color 0.15s ease, transform 0.1s ease;
+    .demo-strip[hidden] { display: none; }
+    .demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding-top: 8px; padding-bottom: 8px; font-size: 14px; }
+    .demo-tag { font: 600 11px/1 var(--font-mono); letter-spacing: .06em; padding: 5px 8px; border-radius: 6px; background: #fff; color: var(--sky-ink); }
+    .demo-dots { display: inline-flex; gap: 4px; }
+    .demo-dots i { width: 18px; height: 4px; border-radius: 2px; background: rgba(3, 105, 161, .2); }
+    .demo-dots i.done { background: rgba(3, 105, 161, .55); }
+    .demo-dots i.on { background: var(--sky-ink); }
+    .demo-cap { flex: 1 1 280px; min-width: 0; }
+
+    /* ---------- Hero ---------- */
+    main { padding-top: 20px; padding-bottom: 40px; display: grid; gap: var(--gap); }
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(226, 232, 240, .9);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px -12px rgba(15, 23, 42, .12);
+      padding: 20px;
+      min-width: 0;
     }
-    input[type="range"].inst-slider::-webkit-slider-thumb:hover {
-      background: #2DD4BF;
-      transform: scale(1.08);
+    @media (min-width: 900px) { .card { padding: 24px; } }
+    .hero {
+      position: relative; overflow: hidden;
+      background: linear-gradient(135deg, var(--tone-bg, var(--fresh-bg)) 0%, rgba(255, 255, 255, .92) 72%);
+      border-color: var(--tone-bg, var(--fresh-bg));
+      display: flex; gap: 20px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+      transition: background .4s ease;
+    }
+    .hero-main { display: flex; gap: 18px; align-items: flex-start; min-width: 0; flex: 1 1 380px; }
+    .hero-icon {
+      flex: 0 0 auto; width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center;
+      background: #fff; color: var(--tone-ink, var(--fresh-ink)); box-shadow: 0 6px 18px -8px rgba(15, 23, 42, .25);
+    }
+    .hero-icon svg { width: 30px; height: 30px; }
+    .hero h1 {
+      font-family: var(--font-display); font-weight: 800; letter-spacing: -0.03em; line-height: 1.04;
+      font-size: clamp(30px, 6.4vw, 56px); color: var(--ink); margin-top: 6px; overflow-wrap: anywhere;
+    }
+    .hero h1 em { font-style: normal; color: var(--tone-ink, var(--fresh-ink)); }
+    .hero .sub { color: #334155; margin-top: 8px; font-size: 16px; max-width: 46ch; }
+    .hero-meta { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+    .ppm-chip {
+      font: 500 13px/1 var(--font-mono); color: var(--tone-ink, var(--fresh-ink));
+      background: rgba(255, 255, 255, .9); border: 1px solid var(--tone-bg, var(--fresh-bg));
+      padding: 8px 12px; border-radius: 12px; white-space: nowrap;
+    }
+    .hero-meta small { color: var(--muted); font-size: 12px; }
+
+    /* ---------- Three cards ---------- */
+    .trio { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 720px) {
+      .trio { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .trio .card-action { grid-column: 1 / -1; }
+    }
+    @media (min-width: 1024px) {
+      .trio { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .trio .card-action { grid-column: auto; }
+    }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+    .chip {
+      font: 600 12px/1 var(--font-body); padding: 6px 10px; border-radius: 999px;
+      background: var(--tone-bg, var(--fresh-bg)); color: var(--tone-ink, var(--fresh-ink)); white-space: nowrap;
+    }
+    .chip.crowd-fresh { background: var(--fresh-bg); color: var(--fresh-ink); }
+    .chip.crowd-warm { background: var(--amber-bg); color: var(--amber-ink); }
+    .chip.crowd-bad { background: var(--red-bg); color: var(--red-ink); }
+
+    .gauge-wrap { display: grid; place-items: center; padding: 6px 0 14px; }
+    .gauge { position: relative; width: min(190px, 56vw); aspect-ratio: 1; }
+    .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .gauge .track { stroke: var(--line); }
+    .gauge .arc { transition: stroke-dashoffset .8s cubic-bezier(.2, .8, .2, 1), stroke .4s ease; }
+    .gauge-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+    .gauge-center .big { font-family: var(--font-display); font-weight: 800; font-size: clamp(40px, 9vw, 52px); line-height: 1; }
+    .gauge-center .of { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .foot { border-top: 1px solid #F1F5F9; padding-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; color: #475569; }
+    .foot strong { color: var(--ink); font-weight: 600; }
+
+    .big-num { font-family: var(--font-display); font-weight: 800; font-size: clamp(60px, 14vw, 84px); line-height: .95; letter-spacing: -0.04em; }
+    .big-num span { font-size: .45em; color: var(--muted); margin-left: 2px; font-weight: 700; }
+    .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 16px 0 14px; }
+    .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--tone, var(--fresh)); transition: width .8s cubic-bezier(.2, .8, .2, 1), background-color .4s ease; }
+    .worst { font-size: 17px; line-height: 1.3; color: #334155; }
+    .worst strong { color: var(--ink); font-weight: 600; }
+
+    .card-action { display: flex; flex-direction: column; }
+    .action-title { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.02em; font-size: clamp(26px, 6vw, 34px); line-height: 1.08; overflow-wrap: anywhere; }
+    .action-sub { color: #475569; margin-top: 8px; font-size: 15px; }
+    .action-spacer { flex: 1 1 auto; min-height: 16px; }
+    .btn-big {
+      width: 100%; border: 0; cursor: pointer; border-radius: 16px; padding: 18px 20px;
+      font: 700 18px/1 var(--font-body); color: #fff; background: var(--ink);
+      transition: transform .12s ease, box-shadow .2s ease, background-color .2s ease; min-height: 56px;
+      box-shadow: 0 10px 24px -12px rgba(15, 23, 42, .5);
+    }
+    .btn-big:hover { transform: translateY(-1px); }
+    .btn-big:active { transform: translateY(0) scale(.99); }
+    .btn-big:disabled { opacity: .7; cursor: default; }
+    .btn-big.warn { background: var(--amber); color: #3b2300; box-shadow: 0 10px 24px -12px rgba(245, 158, 11, .8); }
+    .btn-big.go { background: var(--fresh-ink); }
+    .btn-big.quiet { background: #fff; color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+    .card-action[data-state="open"] { background: linear-gradient(160deg, var(--fresh-bg), rgba(255, 255, 255, .92) 70%); }
+    .card-action[data-state="now"],
+    .card-action[data-state="soon"] { background: linear-gradient(160deg, var(--amber-bg), rgba(255, 255, 255, .92) 70%); }
+
+    @keyframes pulseRing {
+      0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, .55), 0 8px 24px -12px rgba(15, 23, 42, .12); }
+      70% { box-shadow: 0 0 0 16px rgba(245, 158, 11, 0), 0 8px 24px -12px rgba(15, 23, 42, .12); }
+      100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0), 0 8px 24px -12px rgba(15, 23, 42, .12); }
+    }
+    .card.pulse { animation: pulseRing 1.5s ease-out infinite; border-color: var(--amber); }
+
+    /* ---------- Forecast ---------- */
+    .forecast-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; margin-bottom: 8px; }
+    .forecast-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+    .forecast-head p { color: var(--muted); font-size: 14px; margin-top: 2px; }
+    .best {
+      display: inline-flex; align-items: center; gap: 10px; background: var(--fresh-bg); color: var(--fresh-ink);
+      padding: 10px 14px; border-radius: 14px; font-weight: 600; font-size: 15px; max-width: 100%;
+    }
+    .best small { display: block; font-weight: 400; font-size: 12px; opacity: .85; }
+    .chart-box { position: relative; height: 240px; margin-top: 8px; }
+    @media (min-width: 720px) { .chart-box { height: 300px; } }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+    /* ---------- Schedule ---------- */
+    .sched-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+    .sched-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+    .sched-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+    .row {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: center;
+      padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); background: #fff;
+    }
+    .row .time { font: 500 13px/1.2 var(--font-mono); color: var(--muted); white-space: nowrap; }
+    .row .title { font-weight: 600; overflow-wrap: anywhere; }
+    .row .meta { grid-column: 2 / 3; color: var(--muted); font-size: 13px; }
+    .row .status { grid-column: 3 / 4; grid-row: 1 / span 2; align-self: center; }
+    .row.done { opacity: .6; }
+    .row.buffer { background: var(--fresh-bg); border-color: #86EFAC; }
+    .row.buffer .title { color: var(--fresh-ink); }
+    .row.buffer .time { color: var(--fresh-ink); font-weight: 600; }
+    .row.buffer .meta { color: #166534; }
+    .tag { font: 600 11px/1 var(--font-mono); letter-spacing: .04em; padding: 6px 8px; border-radius: 8px; background: #F1F5F9; color: #475569; white-space: nowrap; }
+    .tag.now { background: var(--fresh-bg); color: var(--fresh-ink); }
+    .tag.next { background: var(--sky-bg); color: var(--sky-ink); }
+    .tag.flush { background: #fff; color: var(--fresh-ink); border: 1px solid #86EFAC; }
+    @keyframes flashIn { 0% { transform: scale(.98); box-shadow: 0 0 0 0 rgba(34, 197, 94, .6); } 100% { transform: none; box-shadow: 0 0 0 14px rgba(34, 197, 94, 0); } }
+    .row.flash { animation: flashIn 1.4s ease-out 1; }
+    @media (max-width: 480px) {
+      .row { grid-template-columns: minmax(0, 1fr) auto; }
+      .row .time { grid-column: 1 / 2; }
+      .row .title { grid-column: 1 / 2; }
+      .row .meta { grid-column: 1 / 2; }
+      .row .status { grid-column: 2 / 3; grid-row: 1 / span 3; }
     }
 
-    /* Custom Scrollbars */
-    .inst-scroll::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
-    }
-    .inst-scroll::-webkit-scrollbar-track {
-      background: #0A0B0D;
-    }
-    .inst-scroll::-webkit-scrollbar-thumb {
-      background: #22262F;
-      border-radius: 2px;
-    }
-    .inst-scroll::-webkit-scrollbar-thumb:hover {
-      background: #374151;
-    }
+    footer { padding-bottom: 36px; color: var(--muted); font-size: 12.5px; }
+    footer .wrap { border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
 
-    /* Subtle CAD Grid Pattern for Spatial Map */
-    .cad-grid-bg {
-      background-color: #0A0B0D;
-      background-image: 
-        linear-gradient(to right, rgba(34, 38, 47, 0.45) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(34, 38, 47, 0.45) 1px, transparent 1px);
-      background-size: 20px 20px;
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col justify-between selection:bg-tealOptimal/20 selection:text-tealOptimal">
+<body data-tone="fresh">
 
-  <!-- =====================================================================
-       TOP INSTITUTIONAL HEADER & PIPELINE TELEMETRY BAR
-       ===================================================================== -->
-  <header class="bg-surface border-b border-borderLine sticky top-0 z-50">
-    <div class="max-w-[1680px] mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-      
-      <!-- Left: Brand Identity & Room Selector -->
-      <div class="flex items-center gap-4">
-        <div class="flex items-center gap-2.5">
-          <!-- Clean Geometric Mark -->
-          <div class="w-6 h-6 rounded bg-elevated border border-borderLine flex items-center justify-center">
-            <svg class="w-3.5 h-3.5 text-tealOptimal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <div class="flex items-baseline gap-2">
-            <span class="font-bold tracking-tight text-base text-inkPrimary">CAELUM</span>
-            <span class="text-[11px] font-mono-tabular text-inkMuted border border-borderLine bg-canvas px-1.5 py-0.5 rounded">v2.6 // HTB-26</span>
-          </div>
-        </div>
-
-        <div class="h-4 w-px bg-borderLine hidden sm:block"></div>
-
-        <!-- Room Selector -->
-        <div class="flex items-center gap-1.5">
-          <span class="text-[11px] font-mono-tabular uppercase text-inkMuted hidden md:inline">Zone:</span>
-          <select id="roomSelector" class="bg-elevated text-xs font-medium text-inkPrimary border border-borderLine rounded-md px-2.5 py-1.5 focus:outline-none focus:border-tealOptimal cursor-pointer transition">
-            <option value="appleton">Appleton Tower — Study Pod 4.02 (65 m³ · 2 Win)</option>
-            <option value="forum">Informatics Forum — Meeting Room 2.14 (140 m³ · 4 Win)</option>
-            <option value="personal">Personal Study Mode — Dorm / Bedroom (32 m³ · 1 Win)</option>
-          </select>
-          <!-- Action: Add New Custom Room -->
-          <button id="addRoomBtn" class="flex items-center gap-1 text-xs font-mono-tabular font-medium px-2.5 py-1.5 rounded-md bg-tealOptimal/10 hover:bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 transition shadow-xs" title="Add New Room Zone with Custom Dimensions & Window Settings">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            <span class="hidden sm:inline">Add Room</span>
-          </button>
-          <!-- Action: Delete Selected Custom Room -->
-          <button id="deleteRoomBtn" class="hidden items-center justify-center p-1.5 rounded-md bg-coralCrit/10 hover:bg-coralCrit/25 text-coralCrit border border-coralCrit/30 transition" title="Delete this custom zone">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Center: Live System Clock & Status Pill -->
-      <div class="hidden xl:flex items-center gap-3 bg-canvas border border-borderLine rounded-md px-3 py-1 text-xs font-mono-tabular">
-        <span class="flex items-center gap-1.5 text-inkSecondary">
-          <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal"></span>
-          <span>ODE ENGINE: Δt = 60s</span>
+  <header class="top">
+    <div class="wrap top-row">
+      <div class="logo">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </span>
-        <span class="text-borderLine">|</span>
-        <span class="text-inkSecondary">CLOCK: <strong id="simTimeLabel" class="text-inkPrimary">14:15:00</strong></span>
-        <span class="text-borderLine">|</span>
-        <span id="headerStateBadge" class="text-amberWarn font-medium">STATE: MODERATE STAGNATION</span>
+        CAELUM
       </div>
 
-      <!-- Right: Primary Interactive Action Controls -->
-      <div class="flex items-center gap-2.5">
-        <!-- Action A: 8-Hour Day Simulation (60x) -->
-        <button id="timeWarpBtn" class="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-inkPrimary border border-borderLine transition">
-          <span id="timeWarpIcon" class="text-iceForecast font-mono-tabular">▶</span>
-          <span id="timeWarpText">Run 8-Hour Day Simulation (60x)</span>
-        </button>
+      <nav id="roomPills" class="pills" aria-label="Choose a room"></nav>
+      <select id="roomSelectMobile" class="room-select" aria-label="Choose a room"></select>
 
-        <!-- Action B: Trigger Window Flush / Mark Closed with Live Stopwatch -->
-        <button id="toggleWindowBtn" class="flex items-center gap-2 text-xs font-mono-tabular font-medium px-3 py-1.5 rounded-md bg-tealOptimal/10 hover:bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 transition cursor-pointer">
-          <span id="windowStatusDot" class="w-2 h-2 rounded-full bg-tealOptimal"></span>
-          <span id="windowBtnLabel">Trigger Window Flush Now</span>
-        </button>
-
-        <!-- Action C: Arduino BLE Hardware Admin Trigger -->
-        <button id="openArduinoAdminBtn" type="button" title="Arduino BLE Hardware Management (Interval & Control Strength)" class="flex items-center gap-1.5 text-xs font-mono-tabular px-2.5 py-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-tealOptimal border border-borderLine hover:border-tealOptimal/40 transition cursor-pointer shadow-xs">
-          <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal animate-pulse"></span>
-          <span class="hidden xl:inline text-inkSecondary">Arduino:</span>
-          <strong id="headerActiveArduinoNode" class="text-inkPrimary font-medium">uno-q-1 (+4dBm · 2.4s)</strong>
-        </button>
-
-        <!-- Reset Button -->
-        <button id="resetSimBtn" title="Reset Baseline Parameters" class="p-1.5 rounded-md bg-elevated hover:bg-[#1E222A] text-inkSecondary hover:text-inkPrimary border border-borderLine text-xs font-mono-tabular transition cursor-pointer">
-          ↺
-        </button>
-      </div>
-
-    </div>
-
-    <!-- Sub-Header: Dual-Track Pipeline Telemetry Bar -->
-    <div class="bg-canvas border-t border-borderLine px-4 py-1.5 text-[11px] font-mono-tabular text-inkSecondary">
-      <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-4">
-        <div class="flex items-center gap-4 overflow-x-auto inst-scroll whitespace-nowrap">
-          <div class="flex items-center gap-1.5">
-            <span class="text-inkMuted uppercase">01 // G-RESEARCH ARDUINO BLE (<span id="stripBleRate" class="text-tealOptimal">2.4s</span>):</span>
-            <span id="stripRawSignals" class="text-inkPrimary">24 BLE Packets</span>
-            <span class="text-inkMuted">&rarr;</span>
-            <span class="text-tealOptimal" id="stripHumans">8 Active Mobile Devices (&gt;-65 dBm)</span>
-          </div>
-          <span class="text-borderLine">/</span>
-          <div class="flex items-center gap-1.5">
-            <span class="text-inkMuted uppercase">02 // MASS-BALANCE ODE:</span>
-            <span>V=<span id="stripVol" class="text-inkPrimary">65</span>m³, Q=<span id="stripAirflow" class="text-inkPrimary">16.3</span>m³/h, G=<span id="stripGen" class="text-inkPrimary">128</span>L/h</span>
-          </div>
-          <span class="text-borderLine">/</span>
-          <div class="flex items-center gap-1.5">
-            <span class="text-inkMuted uppercase">03 // HRT OPTIMAL CONTROL:</span>
-            <span id="stripDecision" class="text-iceForecast">Open 2 Windows in 06m 12s (Duration: 6 min)</span>
-          </div>
-        </div>
-        <div class="hidden lg:flex items-center gap-2 text-inkMuted">
-          <span>PRIVACY: ZERO OPTICAL CAMERAS (MAC HASHING)</span>
-          <span>&bull;</span>
-          <span>CAPEX: £0 (VIRTUAL NDIR)</span>
-        </div>
+      <div class="top-right">
+        <span id="linkState" class="link-state" data-link="connecting" title="Connecting to the admin console">
+          <i></i><span class="txt" id="linkText">Connecting…</span>
+        </span>
+        <span class="badge-sim" title="Values are produced by the Caelum simulation, not a live sensor"><i></i>SIMULATED</span>
+        <a class="admin-link" href="admin.html">Admin</a>
       </div>
     </div>
   </header>
 
-  <!-- =====================================================================
-       MAIN WORKSPACE CONTAINER
-       ===================================================================== -->
-  <main class="max-w-[1680px] mx-auto p-4 w-full flex-1 space-y-4">
+  <!-- Guided demo caption (only while the admin runs the 4-step demo) -->
+  <div id="demoStrip" class="demo-strip" hidden>
+    <div class="wrap demo-row">
+      <span id="demoTag" class="demo-tag">STEP 1/4</span>
+      <span id="demoDots" class="demo-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span id="demoCap" class="demo-cap">Caption</span>
+    </div>
+  </div>
 
-    <!-- ROW 1: 4 EXECUTIVE KPI TELEMETRY CARDS -->
-    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-      
-      <!-- Card 1: Virtual CO2 Concentration -->
-      <div id="kpiCo2Card" class="inst-panel kpi-accent-amber p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">01 // Virtual CO₂ Concentration</span>
-            <span id="co2StatusBadge" class="text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-amberWarn/10 text-amberWarn border border-amberWarn/25">
-              STAGNANT
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-2">
-            <span id="co2ValDisplay" class="text-3xl font-bold font-mono-tabular text-inkPrimary">1,280</span>
-            <span class="text-xs font-mono-tabular text-inkSecondary">ppm</span>
-            <span id="co2RateBadge" class="ml-auto text-xs font-mono-tabular text-amberWarn">+16.4 ppm/min</span>
-          </div>
-        </div>
-        <div class="mt-3 pt-2.5 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Outdoor Baseline: <strong class="text-inkPrimary font-normal">420 ppm</strong></span>
-          <span>Delta: <strong id="co2DeltaDisplay" class="text-amberWarn font-normal">+860 ppm</strong></span>
+  <main class="wrap">
+
+    <!-- HERO: the 3-second answer -->
+    <section id="hero" class="card hero" aria-live="polite">
+      <div class="hero-main">
+        <div id="heroIcon" class="hero-icon" aria-hidden="true"></div>
+        <div style="min-width:0">
+          <div id="heroEyebrow" class="eyebrow">Live atmosphere</div>
+          <h1 id="heroHeadline">Fresh — great for deep work</h1>
+          <p id="heroSub" class="sub">Crisp air and room to think.</p>
         </div>
       </div>
-
-      <!-- Card 2: Cognitive Performance Index (Harvard COGfx) -->
-      <div id="kpiCpiCard" class="inst-panel kpi-accent-coral p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">02 // Cognitive Performance (CPI)</span>
-            <span class="text-[10px] font-mono-tabular text-inkSecondary border border-borderLine bg-canvas px-1.5 py-0.5 rounded">
-              Harvard COGfx
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-2">
-            <span id="cpiValDisplay" class="text-3xl font-bold font-mono-tabular text-inkPrimary">57.1%</span>
-            <span class="text-xs font-mono-tabular text-coralCrit" id="stratDeficitDisplay">Strategic: -42.0%</span>
-          </div>
-        </div>
-        <div class="mt-3 pt-2.5 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Productivity Drag (£45/h/p):</span>
-          <span id="payrollLossDisplay" class="text-coralCrit font-medium">-£151.20 / hr</span>
-        </div>
-      </div>
-
-      <!-- Card 3: BLE Occupancy Nowcast N(t) -->
-      <div class="inst-panel kpi-accent-ice p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">03 // BLE Occupancy Nowcast N(t)</span>
-            <span id="ghostBadge" class="text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-iceForecast/10 text-iceForecast border border-iceForecast/25">
-              33% GHOST DIV
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-2">
-            <span id="bleCountDisplay" class="text-3xl font-bold font-mono-tabular text-inkPrimary">8</span>
-            <span class="text-xs font-mono-tabular text-inkSecondary">Active Humans</span>
-            <span class="ml-auto text-xs font-mono-tabular text-inkSecondary">Prior: <strong id="calCountDisplay" class="text-inkPrimary">12 Booked</strong></span>
-          </div>
-        </div>
-        <div class="mt-3 pt-2.5 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Filter: <strong class="text-inkPrimary font-normal">RSSI &gt; -65 dBm</strong></span>
-          <span>Resp. Load: <strong id="respLoadDisplay" class="text-iceForecast font-normal">128.0 L/h</strong></span>
-        </div>
-      </div>
-
-      <!-- Card 4: Optimal Ventilation Control -->
-      <div id="kpiControlCard" class="inst-panel kpi-accent-teal p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono-tabular uppercase tracking-wider text-inkSecondary">04 // Optimal Ventilation Control</span>
-            <div class="flex items-center gap-1.5">
-              <span id="activeTimerBadge" class="hidden text-[10px] font-mono-tabular font-semibold px-2 py-0.5 rounded bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 animate-pulse">
-                ● FLUSHING
-              </span>
-              <button id="cardFlushBtn" class="text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-tealOptimal/15 text-tealOptimal hover:bg-tealOptimal hover:text-canvas transition border border-tealOptimal/30 cursor-pointer">
-                EXECUTE FLUSH
-              </button>
-            </div>
-          </div>
-          <div class="flex items-baseline justify-between mt-2">
-            <div>
-              <span id="timerLabelDisplay" class="text-[10px] font-mono-tabular uppercase text-inkMuted block">Next Window Action</span>
-              <span id="countdownDisplay" class="text-2xl font-bold font-mono-tabular text-tealOptimal">T - 06m 12s</span>
-            </div>
-            <div class="text-right">
-              <span id="durationSubLabel" class="text-[10px] font-mono-tabular uppercase text-inkMuted block">Flush Duration</span>
-              <span id="flushDurDisplay" class="text-sm font-semibold font-mono-tabular text-inkPrimary">6 mins (2 Win)</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Direct Actuation: Say How Many Windows Opened -->
-        <div class="my-2 py-2 border-t border-borderLine/70 flex flex-wrap items-center justify-between gap-1.5">
-          <span class="text-[10px] font-mono-tabular text-inkMuted uppercase">Say How Many Opened:</span>
-          <div id="cardWinButtons" class="flex items-center gap-1">
-            <!-- Dynamically populated via JS -->
-          </div>
-        </div>
-
-        <div class="pt-2 border-t border-borderLine flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary">
-          <span>Flush Airflow Q_open: <strong id="qOpenCardDisplay" class="text-tealOptimal font-normal">728 m³/h</strong></span>
-          <span id="cardSessionReport">Target: <strong class="text-inkPrimary font-normal">580 ppm</strong></span>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- ROW 2: MAIN ANALYTICAL SPLIT (8 COLS LEFT / 4 COLS RIGHT) -->
-    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      
-      <!-- LEFT 8 COLS: MULTI-HORIZON TIME-SERIES & SYNCHRONIZED OCCUPANCY -->
-      <div class="lg:col-span-8 inst-panel p-4 flex flex-col justify-between">
-        
-        <!-- Chart Header & Hardware Validation Toggle -->
-        <div class="flex flex-wrap items-center justify-between pb-3 border-b border-borderLine gap-3">
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="text-sm font-semibold text-inkPrimary">Multi-Horizon CO₂ Trajectory &amp; Monte Carlo Forecast</h2>
-              <span class="text-[10px] font-mono-tabular text-inkSecondary bg-elevated border border-borderLine px-1.5 py-0.5 rounded">-2h Historical &rarr; +4h Projection</span>
-            </div>
-            <p class="text-xs text-inkSecondary mt-0.5">Coupled differential mass-balance ODE driven by BLE occupancy filtering and historical calendar attendance priors.</p>
-          </div>
-
-          <!-- Interactive Aranet4 Validation Overlay Toggle -->
-          <label class="flex items-center gap-2 text-xs font-mono-tabular bg-elevated border border-borderLine px-2.5 py-1.5 rounded cursor-pointer hover:border-inkMuted transition select-none">
-            <input type="checkbox" id="sensorCheckbox" class="accent-tealOptimal rounded-sm cursor-pointer" checked>
-            <span class="text-inkPrimary">Aranet4 NDIR Validation Overlay</span>
-            <span class="text-[10px] text-tealOptimal bg-tealOptimal/10 px-1.5 py-0.2 rounded border border-tealOptimal/20">R² = 0.94</span>
-          </label>
-        </div>
-
-        <!-- Legend Strip -->
-        <div class="flex flex-wrap items-center justify-between gap-2 py-2 text-[11px] font-mono-tabular text-inkSecondary border-b border-borderLine/60">
-          <div class="flex flex-wrap items-center gap-4">
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 bg-inkPrimary inline-block"></span> Virtual CO₂ C(t)
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 border-t-2 border-dashed border-iceForecast inline-block"></span> 4h ML Forecast (±1σ Band)
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 border-t-2 border-dotted border-tealOptimal inline-block"></span> Optimal Window Flush Path
-            </span>
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 border-t border-dashed border-inkMuted inline-block"></span> Aranet4 Ground Truth
-            </span>
-          </div>
-          <div class="text-inkMuted">
-            Thresholds: <span class="text-tealOptimal">650</span> / <span class="text-amberWarn">1,000</span> / <span class="text-coralCrit">1,500 ppm</span>
-          </div>
-        </div>
-
-        <!-- Main CO2 Time-Series Canvas -->
-        <div class="relative w-full h-[300px] mt-2">
-          <canvas id="co2ForecastChart"></canvas>
-        </div>
-
-        <!-- Synchronized Bottom Sub-Chart: Occupancy N(t) -->
-        <div class="mt-3 pt-3 border-t border-borderLine">
-          <div class="flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary mb-1.5">
-            <span class="uppercase tracking-wider">Synchronized Occupancy Time-Series N(t) — Scheduled vs. Actual BLE + ML</span>
-            <div class="flex items-center gap-4">
-              <span class="flex items-center gap-1.5"><span class="w-2.5 h-2 bg-borderLine border border-inkMuted inline-block rounded-xs"></span> Calendar Scheduled Prior</span>
-              <span class="flex items-center gap-1.5"><span class="w-2.5 h-2 bg-iceForecast/40 border border-iceForecast inline-block rounded-xs"></span> BLE Filtered + Nowcast N(t)</span>
-            </div>
-          </div>
-          <div class="relative w-full h-[85px]">
-            <canvas id="occupancyChart"></canvas>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- RIGHT 4 COLS: HARVARD COGFX MATRIX & SPATIAL CAD TOPOLOGY -->
-      <div class="lg:col-span-4 flex flex-col gap-4">
-        
-        <!-- PANEL 1: Harvard COGfx Executive Function Matrix -->
-        <div class="inst-panel p-4">
-          <div class="flex items-center justify-between pb-2.5 border-b border-borderLine">
-            <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Harvard COGfx Executive Matrix</h3>
-              <p class="text-[11px] text-inkSecondary mt-0.5">Empirical dose-response calibrated to 550 ppm = 100% baseline.</p>
-            </div>
-            <span id="cogCeilingPill" class="text-xs font-mono-tabular font-semibold px-2 py-0.5 rounded bg-amberWarn/10 text-amberWarn border border-amberWarn/25">
-              57.1% CEILING
-            </span>
-          </div>
-
-          <div class="space-y-3 mt-3 text-xs font-mono-tabular">
-            <!-- Domain 1 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">01. Routine Information Search</span>
-                <span id="domainRoutine" class="text-tealOptimal font-medium">96%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barRoutine" class="bg-tealOptimal h-full w-[96%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 2 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">02. Focused Activity &amp; Attention</span>
-                <span id="domainFocused" class="text-tealOptimal font-medium">74%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barFocused" class="bg-tealOptimal h-full w-[74%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 3 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">03. Information Usage &amp; Recall</span>
-                <span id="domainInfo" class="text-amberWarn font-medium">62%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barInfo" class="bg-amberWarn h-full w-[62%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 4 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkSecondary">04. Crisis Response &amp; Triage</span>
-                <span id="domainCrisis" class="text-coralCrit font-medium">53%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barCrisis" class="bg-coralCrit h-full w-[53%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Domain 5 -->
-            <div>
-              <div class="flex justify-between text-[11px] mb-1">
-                <span class="text-inkPrimary font-medium">05. Strategic Decision-Making</span>
-                <span id="domainStrategic" class="text-coralCrit font-bold">50%</span>
-              </div>
-              <div class="w-full bg-canvas h-1.5 rounded-sm overflow-hidden border border-borderLine">
-                <div id="barStrategic" class="bg-coralCrit h-full w-[50%] transition-all duration-300"></div>
-              </div>
-            </div>
-
-            <!-- Reaction Speed Penalty Footer -->
-            <div class="pt-2.5 border-t border-borderLine flex justify-between items-center text-[11px]">
-              <span class="text-inkSecondary">Psychomotor Reaction Latency:</span>
-              <span id="latencyPenalty" class="text-coralCrit font-mono-tabular font-medium">-2.75% speed penalty</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- PANEL 2: Spatial Room Airflow & BLE Signal Topology (CAD View) -->
-        <div class="inst-panel p-4 flex-1 flex flex-col justify-between">
-          <div class="flex items-center justify-between pb-2.5 border-b border-borderLine">
-            <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Spatial BLE &amp; Airflow Topology</h3>
-              <p class="text-[11px] text-inkSecondary mt-0.5">2D CAD density grid &amp; RSSI perimeter boundary (-65 dBm).</p>
-            </div>
-            <span id="windowAirflowBadge" class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-canvas text-inkSecondary border border-borderLine">
-              0.25 ACH INFILTRATION
-            </span>
-          </div>
-
-          <!-- 2D CAD Room Topology Canvas -->
-          <div class="my-2.5 relative w-full h-[165px] cad-grid-bg rounded border border-borderLine overflow-hidden">
-            <canvas id="cadTopologyCanvas" class="w-full h-full block"></canvas>
-            <!-- CAD Overlay Annotations -->
-            <div id="cadGlazingLabel" class="absolute top-1.5 left-2 text-[10px] font-mono-tabular text-inkMuted pointer-events-none">
-              EXTERIOR GLAZING // WIN-01 &amp; WIN-02
-            </div>
-            <div class="absolute bottom-1.5 left-2 text-[10px] font-mono-tabular text-inkSecondary pointer-events-none flex items-center gap-3">
-              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-iceForecast inline-block"></span> In-Room (&gt;-65dBm)</span>
-              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-inkMuted inline-block"></span> Hallway Rejected</span>
-            </div>
-            <div class="absolute bottom-1.5 right-2 text-[10px] font-mono-tabular text-inkMuted pointer-events-none">
-              CORRIDOR WALL
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between text-[11px] font-mono-tabular text-inkSecondary pt-1">
-            <span>Cluster Ratio: <strong class="text-inkPrimary font-normal">1.8 BLE / Human</strong></span>
-            <span>Spatial Gradient: <strong id="spatialGradText" class="text-amberWarn font-normal">+190 ppm Core vs Perimeter</strong></span>
-          </div>
-        </div>
-
+      <div class="hero-meta">
+        <span id="heroPpm" class="ppm-chip">CO₂ 680 ppm</span>
+        <small>Estimated from anonymous Bluetooth headcount</small>
       </div>
     </section>
 
-    <!-- ROW 3: PHYSICS SANDBOX CONTROLS & SMART CALENDAR / BLE INSPECTOR (6 COLS / 6 COLS) -->
-    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      
-      <!-- LEFT 6 COLS: REAL-TIME MASS-BALANCE PHYSICS SANDBOX -->
-      <div class="lg:col-span-6 inst-panel p-4 flex flex-col justify-between">
-        <div class="flex flex-wrap items-center justify-between pb-3 border-b border-borderLine gap-2">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Transient Mass-Balance Physics Sandbox</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">Adjust physical room parameters to recompute forward ODE trajectories in real time.</p>
-          </div>
-          <button id="resetParamsBtn" class="text-[11px] font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-elevated border border-borderLine px-2.5 py-1 rounded transition">
-            Reset Defaults
-          </button>
+    <!-- Three cards -->
+    <section class="trio" aria-label="Room status">
+
+      <article class="card">
+        <div class="card-head">
+          <span class="eyebrow">Crowd</span>
+          <span id="crowdChip" class="chip crowd-fresh">Spacious</span>
         </div>
-
-        <!-- 4 Precision Sliders Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 my-3.5">
-          
-          <!-- Slider 1: Room Volume V -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Room Volume (V):</span>
-              <span id="volValLabel" class="text-inkPrimary font-semibold">65 m³</span>
-            </div>
-            <input type="range" id="volSlider" min="20" max="250" step="5" value="65" class="inst-slider">
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>20 m³ (Study Pod)</span>
-              <span>120 m³</span>
-              <span>250 m³ (Seminar)</span>
-            </div>
-          </div>
-
-          <!-- Slider 2: Active BLE Headcount N -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Active BLE Headcount N(t):</span>
-              <span id="occValLabel" class="text-iceForecast font-semibold">8 Humans</span>
-            </div>
-            <input type="range" id="occSlider" min="0" max="25" step="1" value="8" class="inst-slider">
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>0 (Vacant)</span>
-              <span>12</span>
-              <span>25 (At Capacity)</span>
-            </div>
-          </div>
-
-          <!-- Slider 3: Metabolic Activity Rate G -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Metabolic CO₂ Rate (g_person):</span>
-              <span id="genValLabel" class="text-inkPrimary font-semibold">16.0 L/h (Sedentary)</span>
-            </div>
-            <input type="range" id="genSlider" min="14" max="26" step="1" value="16" class="inst-slider">
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>14 L/h (Quiet)</span>
-              <span>19 L/h</span>
-              <span>26 L/h (Active Pitch)</span>
-            </div>
-          </div>
-
-          <!-- Slider 4: Total Windows Installed -->
-          <div>
-            <div class="flex justify-between text-xs font-mono-tabular mb-1.5">
-              <span class="text-inkSecondary">Total Windows in Room:</span>
-              <span id="winCountLabel" class="text-tealOptimal font-semibold">2 Windows</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <input type="range" id="winSlider" min="1" max="8" step="1" value="2" class="inst-slider">
-              <span id="winCountNum" class="text-xs font-mono-tabular text-inkPrimary font-bold w-5 text-right">2</span>
-            </div>
-            <div class="flex justify-between text-[10px] font-mono-tabular text-inkMuted mt-1">
-              <span>1 Window</span>
-              <span>4 Windows</span>
-              <span>8 Windows</span>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Dynamic Individual Windows Manager & Live Timer Control Strip -->
-        <div class="mb-3 pt-3 border-t border-borderLine">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Per-Window Size &amp; Aperture Control</span>
-              <p class="text-[10px] text-inkSecondary mt-0.5">Adjust each window's individual area (m²). Timer starts automatically when windows open.</p>
-            </div>
-            <!-- Quick count buttons: Say how many windows opened -->
-            <div class="flex items-center gap-1.5 bg-canvas px-2 py-1 rounded border border-borderLine font-mono-tabular text-[11px]">
-              <span class="text-inkMuted text-[10px] uppercase">Opened:</span>
-              <div id="sandboxWinButtons" class="flex items-center gap-1">
-                <!-- Dynamically populated via JS -->
-              </div>
-            </div>
-          </div>
-
-          <!-- Individual Window Cards Grid -->
-          <div id="individualWindowsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2 max-h-[175px] overflow-y-auto inst-scroll pr-1">
-            <!-- Populated dynamically via JS -->
-          </div>
-
-          <!-- Total Aperture Summary & Timer Status Bar -->
-          <div class="mt-2.5 p-2 rounded bg-elevated border border-borderLine flex flex-wrap items-center justify-between text-[11px] font-mono-tabular gap-2">
-            <div class="flex items-center gap-2">
-              <span id="flushTimerPulse" class="w-2 h-2 rounded-full bg-inkMuted"></span>
-              <span id="flushTimerStatusLabel" class="text-inkSecondary">Windows Closed (0 m² active)</span>
-            </div>
-            <div class="flex items-center gap-3">
-              <span>Installed Total: <strong id="totalRoomWinArea" class="text-tealOptimal font-semibold">2.0 m²</strong></span>
-              <button id="weClosedThemBtn" type="button" class="hidden text-[10px] px-2.5 py-0.5 rounded bg-coralCrit/15 text-coralCrit border border-coralCrit/30 hover:bg-coralCrit hover:text-canvas transition font-semibold cursor-pointer">
-                We Closed Them (Stop Timer)
-              </button>
+        <div class="gauge-wrap">
+          <div class="gauge" role="img" id="gaugeA11y" aria-label="Occupancy">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="track" cx="60" cy="60" r="50" fill="none" stroke-width="11"/>
+              <circle id="gaugeArc" class="arc" cx="60" cy="60" r="50" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-dasharray="314.16" stroke-dashoffset="314.16"/>
+            </svg>
+            <div class="gauge-center">
+              <div class="big num" id="gaugeNum">8</div>
+              <div class="of" id="gaugeOf">of 12 seats</div>
             </div>
           </div>
         </div>
+        <div class="foot"><span>Free right now</span><strong class="num" id="seatsFree">4 seats free</strong></div>
+      </article>
 
-        <!-- Live Differential Equation Readout Box -->
-        <div class="inst-well p-3 font-mono-tabular text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div class="text-inkSecondary">
-            <span class="text-inkMuted uppercase block text-[10px]">Governing Mass-Balance Equation</span>
-            <span class="text-inkPrimary">C(t) = C_out + (G/Q)·1000·(1 - e<sup>-(Q/V)t</sup>) + (C₀ - C_out)·e<sup>-(Q/V)t</sup></span>
-          </div>
-          <div class="flex items-center gap-3 sm:border-l sm:border-borderLine sm:pl-3 text-right">
-            <div>
-              <span class="text-[10px] text-inkMuted block">TOTAL G(t)</span>
-              <span id="currentGDisplay" class="text-amberWarn font-semibold">128.0 L/h</span>
-            </div>
-            <div>
-              <span class="text-[10px] text-inkMuted block">AIRFLOW Q</span>
-              <span id="currentQDisplay" class="text-tealOptimal font-semibold">16.3 m³/h</span>
-            </div>
-          </div>
+      <article class="card">
+        <div class="card-head">
+          <span class="eyebrow">Focus capacity</span>
+          <span id="focusChip" class="chip">Sharp</span>
+        </div>
+        <div class="big-num num"><b id="cpiNum" style="font-weight:inherit">86</b><span>%</span></div>
+        <div class="bar" aria-hidden="true"><i id="cpiBar" style="width:86%"></i></div>
+        <p id="worstLine" class="worst">Strategic thinking <strong>−24%</strong></p>
+      </article>
+
+      <article id="actionCard" class="card card-action" data-state="none">
+        <div class="card-head">
+          <span class="eyebrow">Next action</span>
+          <span id="actionChip" class="chip">Heads up</span>
+        </div>
+        <h2 id="actionTitle" class="action-title">Stuffy in ~8 min</h2>
+        <p id="actionSub" class="action-sub">Open 2 windows for 10 min to stay sharp.</p>
+        <div class="action-spacer"></div>
+        <button id="actionBtn" type="button" class="btn-big warn">I opened them</button>
+      </article>
+
+    </section>
+
+    <!-- 4-hour forecast -->
+    <section class="card" aria-labelledby="fcTitle">
+      <div class="forecast-head">
+        <div>
+          <h2 id="fcTitle">Next 4 hours</h2>
+          <p>Predicted air quality from the calendar and headcount.</p>
+        </div>
+        <div id="bestBox" class="best">
+          <span aria-hidden="true">★</span>
+          <span><span id="bestTitle">Best time to book: 14:50</span><small id="bestSub">Freshest air in the next 4 hours</small></span>
         </div>
       </div>
-
-      <!-- RIGHT 6 COLS: AUTOMATED CALENDAR ACTUATION & BLE PACKET FILTER LOG -->
-      <div class="lg:col-span-6 inst-panel p-4 flex flex-col justify-between">
-        
-        <!-- Header with View Switcher Tabs -->
-        <div class="flex flex-wrap items-center justify-between pb-2.5 border-b border-borderLine gap-2">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wider font-mono-tabular text-inkPrimary">Automated Schedule Buffers &amp; BLE Telemetry</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">HRT calendar buffer actuator paired with G-Research live RSSI packet filtering.</p>
-          </div>
-
-          <div class="flex items-center bg-canvas p-0.5 rounded border border-borderLine text-[11px] font-mono-tabular">
-            <button id="tabBtnSplit" class="px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition">Split View</button>
-            <button id="tabBtnCal" class="px-2.5 py-1 rounded-sm text-inkSecondary hover:text-inkPrimary transition">Schedule Only</button>
-            <button id="tabBtnBle" class="px-2.5 py-1 rounded-sm text-inkSecondary hover:text-inkPrimary transition">BLE Log Only</button>
-          </div>
-        </div>
-
-        <!-- Split Workspace: Calendar Timeline (Left) + BLE RSSI Stream (Right) -->
-        <div id="bottomRightGrid" class="grid grid-cols-1 md:grid-cols-12 gap-3 my-3">
-          
-          <!-- Sub-Pane A: Smart Calendar Buffer Timeline -->
-          <div id="calendarPane" class="md:col-span-7 space-y-2 font-mono-tabular text-xs">
-            <div class="text-[10px] uppercase text-inkMuted flex justify-between px-1">
-              <span>Room Schedule &amp; Ghost Priors</span>
-              <span class="text-iceForecast">Google Cal / Exchange API</span>
-            </div>
-
-            <!-- Booking 1 -->
-            <div class="inst-well p-2.5 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-inkMuted text-[11px]">13:00–14:00</span>
-                  <span class="text-inkPrimary font-medium font-sans">Quantitative Strategy Sync</span>
-                </div>
-                <div class="text-[11px] text-inkSecondary mt-0.5">
-                  Scheduled: 10 &bull; BLE Actual: <span class="text-inkPrimary">7</span> <span class="text-iceForecast">(30% Ghost Divergence)</span>
-                </div>
-              </div>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-elevated text-inkSecondary border border-borderLine">COMPLETED</span>
-            </div>
-
-            <!-- Auto-Injected Ventilation Buffer -->
-            <div class="p-2.5 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-tealOptimal font-semibold text-[11px]">14:40–14:50</span>
-                  <span class="text-tealOptimal font-medium font-sans">[AUTO-BUFFER] 10m Room Air Flush</span>
-                </div>
-                <div class="text-[11px] text-inkSecondary mt-0.5">
-                  Action: Open 2 Windows (Q = 728 m³/h) &rarr; Drops CO₂ from 1,420 to 560 ppm
-                </div>
-              </div>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-tealOptimal/20 text-tealOptimal font-semibold">SCHEDULED</span>
-            </div>
-
-            <!-- Booking 2 -->
-            <div class="inst-well p-2.5 flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-inkMuted text-[11px]">15:00–16:30</span>
-                  <span class="text-inkPrimary font-medium font-sans">Architecture Review Board</span>
-                </div>
-                <div class="text-[11px] text-inkSecondary mt-0.5">
-                  Scheduled: 14 &bull; ML Nowcast: <span class="text-iceForecast">11 Expected</span> (Pre-flushed to 96% CPI)
-                </div>
-              </div>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-iceForecast/10 text-iceForecast border border-iceForecast/25">PROTECTED</span>
-            </div>
-          </div>
-
-          <!-- Sub-Pane B: Live BLE Packet Sniffer Log & Arduino Ingest Admin -->
-          <div id="bleLogPane" class="md:col-span-5 flex flex-col justify-between inst-well overflow-hidden">
-            <!-- Admin Function: Per-Arduino Hardware Interval & Control Strength -->
-            <div class="p-2 bg-surface border-b border-borderLine space-y-1.5 text-[10px] font-mono-tabular">
-              <div class="flex items-center justify-between">
-                <!-- Arduino Node Selector -->
-                <div class="flex items-center gap-1">
-                  <span class="text-inkMuted uppercase">Node:</span>
-                  <select id="arduinoNodeSelector" class="bg-elevated border border-borderLine rounded px-1.5 py-0.5 text-tealOptimal font-semibold text-[10px] focus:outline-none focus:border-tealOptimal cursor-pointer">
-                    <option value="0">uno-q-1 [Room Core]</option>
-                    <option value="1">uno-q-2 [Perimeter Guard]</option>
-                  </select>
-                </div>
-                <div class="flex items-center gap-1">
-                  <span id="arduinoOnlinePill" class="text-[9px] text-tealOptimal bg-tealOptimal/10 px-1.5 py-0.2 rounded border border-tealOptimal/20 flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal animate-ping"></span> ONLINE
-                  </span>
-                  <button id="quickFleetModalBtn" type="button" class="text-[9px] text-inkSecondary hover:text-inkPrimary bg-elevated border border-borderLine px-1.5 py-0.5 rounded transition cursor-pointer" title="Open Full Arduino Fleet Admin Console">
-                    FLEET ⚙
-                  </button>
-                </div>
-              </div>
-
-              <!-- Tuning Row: Interval & Control Strength (Tx Power) -->
-              <div class="grid grid-cols-2 gap-2 pt-1 border-t border-borderLine/40">
-                <!-- Interval Tuning -->
-                <div>
-                  <div class="flex justify-between items-center mb-0.5">
-                    <span class="text-inkMuted">Send Interval:</span>
-                    <span id="bleIntervalDisplay" class="text-tealOptimal font-bold">2.4s</span>
-                  </div>
-                  <input type="range" id="bleIntervalSlider" min="0.5" max="15" step="0.5" value="2.4" class="inst-slider w-full cursor-pointer" title="Adjust Arduino BLE transmit frequency">
-                </div>
-                <!-- Control Strength / Tx Power Tuning -->
-                <div>
-                  <div class="flex justify-between items-center mb-0.5">
-                    <span class="text-inkMuted">Control Strength:</span>
-                    <span id="bleStrengthDisplay" class="text-iceForecast font-bold">+4 dBm</span>
-                  </div>
-                  <select id="bleStrengthSelect" class="w-full bg-elevated border border-borderLine rounded px-1 py-0.5 text-iceForecast font-semibold text-[10px] focus:outline-none focus:border-iceForecast cursor-pointer">
-                    <option value="+8 dBm">+8 dBm (Max Boost · ~35m)</option>
-                    <option value="+4 dBm" selected>+4 dBm (High · ~20m)</option>
-                    <option value="0 dBm">0 dBm (Standard · ~10m)</option>
-                    <option value="-4 dBm">-4 dBm (Medium · ~5m)</option>
-                    <option value="-12 dBm">-12 dBm (Localized · ~2m)</option>
-                  </select>
-                </div>
-              </div>
-
-              <!-- Push Button & Status -->
-              <div class="flex items-center justify-between pt-0.5 text-[9px]">
-                <span class="text-inkMuted" id="arduinoPacketCounterText">Node: uno-q-1 · Heartbeat 2s</span>
-                <button id="deployBleConfigBtn" type="button" class="px-2 py-0.5 rounded bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/40 hover:bg-tealOptimal hover:text-canvas transition font-semibold cursor-pointer shadow-xs" title="Transmit configuration to selected Arduino board">
-                  Deploy Config (PUT /ingest/config)
-                </button>
-              </div>
-            </div>
-
-            <div class="px-2.5 py-1 bg-elevated border-b border-borderLine flex items-center justify-between text-[10px] font-mono-tabular text-inkSecondary">
-              <span>BLE UUID HASH</span>
-              <span>NODE // RSSI</span>
-              <span>STATE</span>
-            </div>
-            <div id="blePacketStream" class="h-[128px] overflow-y-auto divide-y divide-borderLine/50 text-[11px] font-mono-tabular inst-scroll">
-              <!-- Populated dynamically via JS -->
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Bottom Summary Strip -->
-        <div class="pt-2 border-t border-borderLine flex flex-wrap items-center justify-between text-[11px] font-mono-tabular text-inkSecondary gap-2">
-          <span>Intervention Yield: <strong class="text-tealOptimal font-normal">+34.2% Afternoon Cognitive Preservation</strong></span>
-          <span>Avoided Peak: <strong class="text-coralCrit font-normal">2,380 ppm</strong> &rarr; Capped at <strong class="text-tealOptimal font-normal">1,350 ppm</strong></span>
-        </div>
-
+      <div class="chart-box"><canvas id="forecastChart" aria-label="Forecast of CO2 over the next four hours" role="img"></canvas></div>
+      <div class="legend" aria-hidden="true">
+        <span><i style="background:rgba(34,197,94,.35)"></i>Fresh</span>
+        <span><i style="background:rgba(245,158,11,.35)"></i>Stuffy (1,000+ ppm)</span>
+        <span><i style="background:rgba(239,68,68,.35)"></i>Very stuffy</span>
+        <span><i style="background:#86EFAC"></i>Auto flush</span>
       </div>
+      <p id="chartFallback" class="legend" hidden>The forecast chart needs the Chart.js library (online).</p>
+    </section>
 
+    <!-- Schedule -->
+    <section class="card" aria-labelledby="schedTitle">
+      <div class="sched-head">
+        <h2 id="schedTitle">Today's schedule</h2>
+        <span class="eyebrow" id="schedClock">Sim time 14:15</span>
+      </div>
+      <ul id="scheduleList" class="sched-list"></ul>
     </section>
 
   </main>
 
-  <!-- =====================================================================
-       FOOTER
-       ===================================================================== -->
-  <footer class="border-t border-borderLine bg-surface py-2.5 px-4 text-[11px] font-mono-tabular text-inkMuted mt-4">
-    <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <strong class="text-inkSecondary font-medium">CAELUM TELEMETRY SYSTEMS</strong> // HackTheBurgh 2026 — G-Research ("Make the Invisible Visible") &amp; Hudson River Trading ("Predictions &amp; Decision Making")
-      </div>
-      <div class="flex items-center gap-4">
-        <span>Model: Transient Mass-Balance + Harvard COGfx</span>
-        <span>&bull;</span>
-        <span>University of Edinburgh, School of Informatics</span>
-      </div>
+  <footer>
+    <div class="wrap">
+      <span>Caelum estimates CO₂ from anonymous Bluetooth device counts. No cameras, no personal data.</span>
+      <span>Simulated data · HackTheBurgh 2026</span>
     </div>
   </footer>
 
-  <!-- =====================================================================
-       MODAL: ONBOARD NEW ROOM ZONE WITH CUSTOM SETTINGS
-       ===================================================================== -->
-  <div id="addRoomModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-canvas/80 backdrop-blur-sm hidden">
-    <div class="bg-surface border border-borderLine rounded-lg shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
-      
-      <!-- Modal Header -->
-      <div class="px-5 py-3.5 border-b border-borderLine flex items-center justify-between bg-elevated">
-        <div class="flex items-center gap-2.5">
-          <div class="w-6 h-6 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-center text-tealOptimal">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          </div>
-          <div>
-            <h3 class="text-xs font-bold font-mono-tabular uppercase tracking-wider text-inkPrimary">Zone Onboarding // New Room Specification</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">Configure room volume, headcount priors, and custom window apertures.</p>
-          </div>
-        </div>
-        <button id="closeAddRoomModalBtn" type="button" class="text-inkMuted hover:text-inkPrimary p-1 rounded transition text-sm cursor-pointer">✕</button>
-      </div>
-
-      <!-- Modal Body Form -->
-      <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto inst-scroll font-mono-tabular text-xs">
-        <div>
-          <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Room Name &amp; Campus Location</label>
-          <input type="text" id="newRoomName" placeholder="e.g. Bayes Centre — Robotics Lab 2.01" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Room Volume (V in m³)</label>
-            <input type="number" id="newRoomVol" min="15" max="500" step="5" value="85" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
-            <span class="text-[10px] text-inkMuted mt-0.5 block">Pod: 30m³ · Seminar: 140m³</span>
-          </div>
-          <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Initial Baseline CO₂ (ppm)</label>
-            <input type="number" id="newRoomCo2" min="420" max="2500" step="10" value="1150" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
-            <span class="text-[10px] text-inkMuted mt-0.5 block">Outdoor: 420 ppm</span>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Expected BLE Headcount N(t)</label>
-            <input type="number" id="newRoomOcc" min="0" max="50" step="1" value="6" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
-            <span class="text-[10px] text-inkMuted mt-0.5 block">Active filtered devices</span>
-          </div>
-          <div>
-            <label class="block text-inkSecondary text-[11px] uppercase tracking-wider mb-1">Calendar Prior (Booked)</label>
-            <input type="number" id="newRoomSched" min="0" max="50" step="1" value="8" class="w-full bg-elevated border border-borderLine rounded px-3 py-2 text-inkPrimary focus:outline-none focus:border-tealOptimal text-xs transition">
-            <span class="text-[10px] text-inkMuted mt-0.5 block">Google Cal expected</span>
-          </div>
-        </div>
-
-        <!-- Window Configuration Section -->
-        <div class="pt-3 border-t border-borderLine">
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <label class="text-inkPrimary text-[11px] font-semibold uppercase tracking-wider">Number of Windows</label>
-              <span class="text-[10px] text-inkMuted block">Configure custom area for each window</span>
-            </div>
-            <div class="flex items-center gap-1.5 bg-elevated p-0.5 rounded border border-borderLine">
-              <button type="button" id="modalDecWinBtn" class="w-6 h-6 rounded bg-canvas border border-borderLine hover:border-inkMuted text-inkPrimary flex items-center justify-center font-bold transition cursor-pointer">-</button>
-              <span id="modalWinCountLabel" class="w-6 text-center text-tealOptimal font-bold">2</span>
-              <button type="button" id="modalIncWinBtn" class="w-6 h-6 rounded bg-canvas border border-borderLine hover:border-inkMuted text-inkPrimary flex items-center justify-center font-bold transition cursor-pointer">+</button>
-            </div>
-          </div>
-
-          <!-- Dynamic Per-Window Inputs -->
-          <div id="modalWindowsContainer" class="space-y-2 mt-2">
-            <!-- Dynamically populated via JS -->
-          </div>
-        </div>
-      </div>
-
-      <!-- Modal Footer Actions -->
-      <div class="px-5 py-3 border-t border-borderLine bg-elevated flex items-center justify-end gap-2.5">
-        <button id="cancelAddRoomBtn" type="button" class="px-3.5 py-1.5 rounded text-xs font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-canvas border border-borderLine transition cursor-pointer">
-          Cancel
-        </button>
-        <button id="saveAddRoomBtn" type="button" class="px-4 py-1.5 rounded text-xs font-mono-tabular font-medium text-canvas bg-tealOptimal hover:bg-tealOptimal/90 transition shadow cursor-pointer">
-          Save &amp; Activate Zone
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =====================================================================
-       MODAL: ARDUINO BLE HARDWARE FLEET & CONTROL STRENGTH ADMIN
-       ===================================================================== -->
-  <div id="arduinoAdminModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-canvas/80 backdrop-blur-sm hidden">
-    <div class="bg-surface border border-borderLine rounded-lg shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
-      
-      <!-- Header -->
-      <div class="px-5 py-3.5 border-b border-borderLine flex items-center justify-between bg-elevated">
-        <div class="flex items-center gap-2.5">
-          <div class="w-6 h-6 rounded bg-tealOptimal/10 border border-tealOptimal/30 flex items-center justify-center text-tealOptimal">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="4"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-          </div>
-          <div>
-            <h3 class="text-xs font-bold font-mono-tabular uppercase tracking-wider text-inkPrimary">Arduino BLE Hardware Fleet // Admin Console</h3>
-            <p class="text-[11px] text-inkSecondary mt-0.5">Adjust BLE transmission intervals and RF control strength (Tx power in dBm) per microcontroller.</p>
-          </div>
-        </div>
-        <button id="closeArduinoAdminModalBtn" type="button" class="text-inkMuted hover:text-inkPrimary p-1 rounded transition text-sm cursor-pointer">✕</button>
-      </div>
-
-      <!-- Body -->
-      <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto inst-scroll font-mono-tabular text-xs">
-        <!-- Node Cards Grid -->
-        <div id="modalArduinoNodesContainer" class="space-y-3">
-          <!-- Dynamically populated via JS -->
-        </div>
-
-        <!-- Live Dispatched Payload Box -->
-        <div class="p-3 rounded bg-canvas border border-borderLine text-[10px]">
-          <div class="flex items-center justify-between text-inkMuted uppercase mb-1">
-            <span>Hardware Dispatch Payload (PUT /ingest/config)</span>
-            <span class="text-tealOptimal">HTTP 201 Response Sync</span>
-          </div>
-          <pre id="modalPayloadPreview" class="text-tealOptimal font-mono-tabular whitespace-pre-wrap leading-relaxed overflow-x-auto text-[10px] p-2 bg-surface/50 rounded border border-borderLine/50"></pre>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="px-5 py-3 border-t border-borderLine bg-elevated flex items-center justify-between gap-2.5">
-        <button id="modalAddArduinoNodeBtn" type="button" class="px-3 py-1.5 rounded text-xs font-mono-tabular text-tealOptimal hover:text-tealOptimal/80 bg-tealOptimal/10 border border-tealOptimal/20 transition cursor-pointer flex items-center gap-1">
-          + Register Arduino Node
-        </button>
-        <div class="flex items-center gap-2">
-          <button id="cancelArduinoAdminModalBtn" type="button" class="px-3.5 py-1.5 rounded text-xs font-mono-tabular text-inkSecondary hover:text-inkPrimary bg-canvas border border-borderLine transition cursor-pointer">
-            Close
-          </button>
-          <button id="saveArduinoAdminModalBtn" type="button" class="px-4 py-1.5 rounded text-xs font-mono-tabular font-medium text-canvas bg-tealOptimal hover:bg-tealOptimal/90 transition shadow cursor-pointer">
-            Deploy All to Fleet (PUT /config)
-          </button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =====================================================================
-       APPLICATION SIMULATION & MATHEMATICAL ENGINE
-       ===================================================================== -->
+  <script src="js/engine.js"></script>
   <script>
-    /* =====================================================================
-       0. PRESET ROOM DEFINITIONS & LOCAL STORAGE ZONE PERSISTENCE
-       ===================================================================== */
-    const DEFAULT_ROOMS = [
-      {
-        id: "appleton",
-        name: "Appleton Tower — Study Pod 4.02",
-        volume: 65.0,
-        occupancy: 8,
-        scheduledCount: 12,
-        co2: 1280.0,
-        windows: [
-          { id: 1, name: "Win 01 (North)", area: 1.0, isOpen: false },
-          { id: 2, name: "Win 02 (North)", area: 1.0, isOpen: false }
-        ],
-        isCustom: false
-      },
-      {
-        id: "forum",
-        name: "Informatics Forum — Meeting Room 2.14",
-        volume: 140.0,
-        occupancy: 15,
-        scheduledCount: 20,
-        co2: 1410.0,
-        windows: [
-          { id: 1, name: "North Win 1", area: 1.2, isOpen: false },
-          { id: 2, name: "North Win 2", area: 1.2, isOpen: false },
-          { id: 3, name: "East Win 1", area: 1.0, isOpen: false },
-          { id: 4, name: "East Win 2", area: 1.0, isOpen: false }
-        ],
-        isCustom: false
-      },
-      {
-        id: "personal",
-        name: "Personal Study Mode — Dorm / Bedroom",
-        volume: 32.0,
-        occupancy: 1,
-        scheduledCount: 1,
-        co2: 980.0,
-        windows: [
-          { id: 1, name: "Bedroom Sash Win", area: 0.8, isOpen: false }
-        ],
-        isCustom: false
-      }
+  (function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var STATE = Caelum.STATE;
+
+    /* ------------------------------------------------------------------
+       Copy: CO2 -> human headline (DESIGN_SYSTEM.md §2.2, "3-second rule")
+       ------------------------------------------------------------------ */
+    var BANDS = [
+      { max: 750,      tone: 'fresh',  lead: 'Fresh',     rest: 'great for deep work',   sub: 'Crisp air and room to think.',
+        icon: '<path d="M5 19c0-8 5-13 14-14 0 9-5 14-14 14z"/><path d="M5 19l7-7"/>' },
+      { max: 1000,     tone: 'warm',   lead: 'Getting warm', rest: 'still fine',          sub: 'Air is okay for now. We will warn you before it turns stuffy.',
+        icon: '<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/>' },
+      { max: 1400,     tone: 'stuffy', lead: 'Stuffy',    rest: 'open a window',         sub: 'Focus is starting to slip. A few minutes of fresh air fixes it.',
+        icon: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 4v16M4 12h16"/>' },
+      { max: Infinity, tone: 'bad',    lead: 'Very stuffy', rest: 'ventilate now',      sub: 'Thinking is noticeably slower. Please open the windows.',
+        icon: '<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/>' }
+    ];
+    function bandFor(co2) {
+      for (var i = 0; i < BANDS.length; i++) if (co2 < BANDS[i].max) return BANDS[i];
+      return BANDS[BANDS.length - 1];
+    }
+    var TONE_COLOR = { fresh: '#22C55E', warm: '#65A30D', stuffy: '#F59E0B', bad: '#EF4444' };
+
+    var DOMAINS = [
+      ['strategic', 'Strategic thinking'], ['crisis', 'Crisis response'],
+      ['info', 'Information use'], ['focused', 'Focused work'], ['routine', 'Routine search']
     ];
 
-    function getCustomRooms() {
-      try {
-        const raw = localStorage.getItem('caelum_custom_rooms');
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch (e) {
-        console.warn('Failed to parse custom rooms from localStorage', e);
-        return [];
-      }
+    function ppm(v) { return Math.round(v).toLocaleString('en-GB'); }
+    function roomShort() {
+      var rooms = Caelum.getLink() === 'admin' ? Caelum.getRemoteRooms() : Caelum.roomList();
+      for (var i = 0; i < rooms.length; i++) if (rooms[i].id === STATE.currentRoomId) return rooms[i].short;
+      return (STATE.roomName || 'Room').split('—').pop().trim();
     }
-
-    function saveCustomRooms(rooms) {
-      try {
-        localStorage.setItem('caelum_custom_rooms', JSON.stringify(rooms));
-      } catch (e) {
-        console.warn('Failed to save custom rooms to localStorage', e);
-      }
+    function mmss(sec) {
+      sec = Math.max(0, Math.floor(sec));
+      return String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
     }
+    function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 
-    function getAllRooms() {
-      return [...DEFAULT_ROOMS, ...getCustomRooms()];
-    }
+    /* ------------------------------------------------------------------
+       Header: room switcher, link status
+       ------------------------------------------------------------------ */
+    var pillsSig = '';
+    function renderRooms() {
+      var rooms = Caelum.getLink() === 'admin' ? Caelum.getRemoteRooms() : Caelum.roomList();
+      var sig = rooms.map(function (r) { return r.id + ':' + r.short; }).join('|') + '#' + STATE.currentRoomId;
+      if (sig === pillsSig) return;
+      pillsSig = sig;
 
-    /* =====================================================================
-       1. CORE SYSTEM STATE
-       ===================================================================== */
-    const STATE = {
-      currentRoomId: "appleton",
-      roomVolume: 65.0,          // V in m³
-      occupancy: 8,              // N(t) live filtered BLE humans
-      scheduledCount: 12,        // Room calendar scheduled headcount
-      co2GenPerPerson: 16.0,     // L/h per person (16 sedentary, 24 presenting)
-      cOutdoor: 420.0,           // Outdoor baseline ppm
-      infiltrationACH: 0.25,     // Windows closed baseline air changes/hr
-      kFlow: 350.0,              // Empirical open window flow constant m³/(h·m²)
-      arduinoBleInterval: 2.4,   // Admin-adjustable interval for Arduino BLE packet broadcast (seconds)
-      showGroundTruth: true,
+      var nav = $('roomPills');
+      var sel = $('roomSelectMobile');
+      nav.textContent = '';
+      sel.textContent = '';
+      rooms.forEach(function (r) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pill';
+        b.textContent = r.short;
+        b.title = r.name;
+        b.setAttribute('aria-pressed', String(r.id === STATE.currentRoomId));
+        b.addEventListener('click', function () { Caelum.requestSwitchRoom(r.id); });
+        nav.appendChild(b);
 
-      // Dynamic array of windows with individual size (m²) and open status
-      windows: [
-        { id: 1, name: "Win 01 (North)", area: 1.0, isOpen: false },
-        { id: 2, name: "Win 02 (North)", area: 1.0, isOpen: false }
-      ],
-
-      // Reactive helpers for backward compatibility & easy querying
-      get isWindowOpen() {
-        return Boolean(this.windows && this.windows.some(w => w.isOpen));
-      },
-      set isWindowOpen(val) {
-        if (!this.windows) return;
-        if (val) {
-          if (!this.windows.some(w => w.isOpen)) {
-            const count = Math.min(2, this.windows.length);
-            for (let i = 0; i < this.windows.length; i++) {
-              this.windows[i].isOpen = (i < count);
-            }
-          }
-        } else {
-          this.windows.forEach(w => { w.isOpen = false; });
-        }
-      },
-      get windowCount() {
-        return this.windows ? this.windows.length : 2;
-      },
-      set windowCount(count) {
-        if (!this.windows) this.windows = [];
-        const target = Math.max(1, Math.min(8, parseInt(count, 10) || 1));
-        while (this.windows.length < target) {
-          const idx = this.windows.length + 1;
-          this.windows.push({ id: idx, name: `Win 0${idx}`, area: 1.0, isOpen: false });
-        }
-        while (this.windows.length > target) {
-          this.windows.pop();
-        }
-      },
-      get windowAreaPerWin() {
-        return this.windows && this.windows.length > 0 ? (this.totalWindowArea / this.windows.length) : 1.0;
-      },
-      get openWindowCount() {
-        return this.windows ? this.windows.filter(w => w.isOpen).length : 0;
-      },
-      get totalOpenArea() {
-        return this.windows ? this.windows.filter(w => w.isOpen).reduce((sum, w) => sum + (w.area || 1.0), 0) : 0;
-      },
-      get totalWindowArea() {
-        return this.windows ? this.windows.reduce((sum, w) => sum + (w.area || 1.0), 0) : 0;
-      },
-
-      // Dynamic Telemetry
-      co2: 1280.0,
-      rateOfChange: 16.4,
-      countdownSeconds: 372,     // 06m 12s
-      simMinutesFrom9AM: 315,    // 14:15:00
-      isTimeWarpRunning: false,
-      warpTimer: null
-    };
-
-    /* =====================================================================
-       2. MATHEMATICAL MODELS (TRANSIENT MASS-BALANCE & HARVARD COGFX)
-       ===================================================================== */
-    function getAirflowQ(isOpenOrAssumeAll) {
-      const qClosed = STATE.infiltrationACH * STATE.roomVolume;
-      if (!isOpenOrAssumeAll) return qClosed;
-      const openArea = STATE.totalOpenArea > 0 ? STATE.totalOpenArea : STATE.totalWindowArea;
-      if (openArea <= 0) return qClosed;
-      return qClosed + (STATE.kFlow * openArea);
-    }
-
-    function getCurrentAirflowQ() {
-      const qClosed = STATE.infiltrationACH * STATE.roomVolume;
-      if (!STATE.isWindowOpen || STATE.totalOpenArea <= 0) return qClosed;
-      return qClosed + (STATE.kFlow * STATE.totalOpenArea);
-    }
-
-    function stepMassBalanceCO2(c0, nPeople, vM3, qM3h, dtHours, gPerson) {
-      const gTotal = nPeople * gPerson;
-      const qSafe = Math.max(qM3h, 0.1);
-      const decay = Math.exp(-(qSafe / vM3) * dtHours);
-      return STATE.cOutdoor + (gTotal / qSafe) * 1000.0 * (1.0 - decay) + (c0 - STATE.cOutdoor) * decay;
-    }
-
-    function evaluateHarvardCOGfx(co2Ppm) {
-      const delta = Math.max(0.0, co2Ppm - 550.0);
-      const overall = Math.max(12.0, Math.min(100.0, +(100.0 * Math.exp(-0.00081 * delta)).toFixed(1)));
-      const clampDomain = (k) => Math.max(10, Math.min(100, Math.round(100.0 - k * delta)));
-
-      return {
-        overall,
-        routine: clampDomain(0.005),
-        focused: clampDomain(0.035),
-        info: clampDomain(0.052),
-        crisis: clampDomain(0.064),
-        strategic: clampDomain(0.068),
-        reactionPenalty: +(-1.6 * (Math.max(0.0, co2Ppm - 420.0) / 500.0)).toFixed(2)
-      };
-    }
-
-    /* =====================================================================
-       2B. AUTOMATIC FLUSH TIMER & APERTURE ENGINE
-       ===================================================================== */
-    let flushTimerInterval = null;
-    let flushElapsedSeconds = 0;
-    let flushStartCo2 = 1280;
-    let lastFlushRecord = null;
-
-    function formatTimerStr(totalSecs) {
-      const m = Math.floor(totalSecs / 60);
-      const s = totalSecs % 60;
-      return `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-    }
-
-    function formatTimerDigital(totalSecs) {
-      const m = Math.floor(totalSecs / 60);
-      const s = totalSecs % 60;
-      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    }
-
-    function startFlushTimer() {
-      if (flushTimerInterval) return; // already running
-      flushElapsedSeconds = 0;
-      flushStartCo2 = Math.round(STATE.co2);
-
-      flushTimerInterval = setInterval(() => {
-        flushElapsedSeconds++;
-        updateTimerDisplayUI();
-      }, 1000);
-
-      updateTimerDisplayUI();
-    }
-
-    function stopFlushTimer() {
-      if (flushTimerInterval) {
-        clearInterval(flushTimerInterval);
-        flushTimerInterval = null;
-      }
-
-      if (flushElapsedSeconds > 0) {
-        const endCo2 = Math.round(STATE.co2);
-        const drop = Math.max(0, flushStartCo2 - endCo2);
-        lastFlushRecord = {
-          durationStr: formatTimerStr(flushElapsedSeconds),
-          seconds: flushElapsedSeconds,
-          startCo2: flushStartCo2,
-          endCo2: endCo2,
-          drop: drop,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-      }
-
-      flushElapsedSeconds = 0;
-      updateTimerDisplayUI();
-    }
-
-    function closeAllWindowsAndStopTimer() {
-      STATE.windows.forEach(w => { w.isOpen = false; });
-      stopFlushTimer();
-      updateWindowControlsUI();
-      refreshUI();
-    }
-
-    function setOpenWindowsCount(count) {
-      const target = Math.max(0, Math.min(STATE.windows.length, parseInt(count, 10) || 0));
-      const wasOpen = STATE.isWindowOpen;
-
-      STATE.windows.forEach((w, idx) => {
-        w.isOpen = (idx < target);
+        var o = document.createElement('option');
+        o.value = r.id;
+        o.textContent = r.short;
+        sel.appendChild(o);
       });
-
-      const isOpenNow = STATE.isWindowOpen;
-
-      if (!wasOpen && isOpenNow) {
-        startFlushTimer();
-      } else if (wasOpen && !isOpenNow) {
-        stopFlushTimer();
-      }
-
-      updateWindowControlsUI();
-      refreshUI();
+      sel.value = STATE.currentRoomId;
     }
 
-    function toggleIndividualWindow(idx) {
-      if (!STATE.windows[idx]) return;
-      const wasOpen = STATE.isWindowOpen;
-      STATE.windows[idx].isOpen = !STATE.windows[idx].isOpen;
-      const isOpenNow = STATE.isWindowOpen;
-
-      if (!wasOpen && isOpenNow) {
-        startFlushTimer();
-      } else if (wasOpen && !isOpenNow) {
-        stopFlushTimer();
-      }
-
-      updateWindowControlsUI();
-      refreshUI();
+    function renderLink() {
+      var l = Caelum.getLink();
+      var el = $('linkState');
+      el.setAttribute('data-link', l);
+      var map = {
+        admin: ['Synced with admin', 'Receiving live updates from the admin console'],
+        standalone: ['Standalone', 'No admin console found: running its own local simulation'],
+        connecting: ['Connecting…', 'Looking for the admin console']
+      };
+      $('linkText').textContent = map[l][0];
+      el.title = map[l][1];
     }
 
-    function updateWindowArea(idx, areaVal) {
-      if (!STATE.windows[idx]) return;
-      const num = Math.max(0.2, Math.min(4.0, parseFloat(areaVal) || 1.0));
-      STATE.windows[idx].area = +num.toFixed(1);
-
-      saveCurrentRoomChangesIfCustom();
-      updateWindowControlsUI();
-      refreshUI();
+    /* ------------------------------------------------------------------
+       Guided demo caption strip
+       ------------------------------------------------------------------ */
+    function currentDemo() {
+      return Caelum.getLink() === 'admin' ? Caelum.demo.getRemote() : { mode: 'none' };
     }
-
-    function updateTimerDisplayUI() {
-      const isRunning = flushTimerInterval !== null || STATE.isWindowOpen;
-      const formatted = formatTimerStr(flushElapsedSeconds);
-      const formattedDigital = formatTimerDigital(flushElapsedSeconds);
-
-      const cdDisplay = document.getElementById('countdownDisplay');
-      const timerLabel = document.getElementById('timerLabelDisplay');
-      const flushDurDisplay = document.getElementById('flushDurDisplay');
-      const cardFlushBtn = document.getElementById('cardFlushBtn');
-      const activeTimerBadge = document.getElementById('activeTimerBadge');
-      const cardSessionReport = document.getElementById('cardSessionReport');
-      const headerBtn = document.getElementById('toggleWindowBtn');
-      const headerLabel = document.getElementById('windowBtnLabel');
-      const headerDot = document.getElementById('windowStatusDot');
-      const weClosedBtn = document.getElementById('weClosedThemBtn');
-      const timerPulse = document.getElementById('flushTimerPulse');
-      const timerStatusLabel = document.getElementById('flushTimerStatusLabel');
-      const durationSubLabel = document.getElementById('durationSubLabel');
-      const badge = document.getElementById('windowAirflowBadge');
-
-      if (isRunning) {
-        // Card 4 Readouts
-        if (cdDisplay) {
-          cdDisplay.innerText = formatted;
-          cdDisplay.className = 'text-2xl font-bold font-mono-tabular text-tealOptimal animate-pulse';
+    function renderDemo(d) {
+      var strip = $('demoStrip');
+      if (d.mode === 'guided' && d.step > 0) {
+        strip.hidden = false;
+        $('demoTag').textContent = 'STEP ' + d.step + '/' + d.total;
+        $('demoCap').textContent = d.title + ' — ' + d.caption;
+        var dots = $('demoDots').children;
+        for (var i = 0; i < dots.length; i++) {
+          dots[i].className = (i + 1 === d.step) ? 'on' : (i + 1 < d.step ? 'done' : '');
         }
-        if (timerLabel) {
-          timerLabel.innerHTML = '● FLUSH ACTIVE (STOPWATCH)';
-          timerLabel.className = 'text-[10px] font-mono-tabular uppercase text-tealOptimal block font-semibold';
-        }
-        if (durationSubLabel) durationSubLabel.innerText = 'STATUS & LOAD';
-        if (flushDurDisplay) {
-          flushDurDisplay.innerText = `${STATE.openWindowCount}/${STATE.windows.length} Win Open (${STATE.totalOpenArea.toFixed(1)} m²)`;
-        }
-        if (activeTimerBadge) activeTimerBadge.classList.remove('hidden');
-        if (cardFlushBtn) {
-          cardFlushBtn.innerText = 'WE CLOSED THEM (STOP)';
-          cardFlushBtn.className = 'text-[10px] font-mono-tabular font-bold px-2 py-0.5 rounded bg-coralCrit text-canvas border border-coralCrit hover:bg-coralCrit/80 transition cursor-pointer shadow';
-        }
-        if (cardSessionReport) {
-          cardSessionReport.innerHTML = `Active Airflow: <strong class="text-tealOptimal font-normal">${Math.round(getCurrentAirflowQ())} m³/h</strong>`;
-        }
-
-        // Header Action Button
-        if (headerBtn) {
-          headerBtn.className = 'flex items-center gap-2 text-xs font-mono-tabular font-medium px-3 py-1.5 rounded-md bg-tealOptimal text-canvas border border-tealOptimal transition cursor-pointer shadow';
-        }
-        if (headerLabel) {
-          headerLabel.innerHTML = `Flushing: <strong>${formattedDigital}</strong> (${STATE.openWindowCount} Win) — Mark Closed`;
-        }
-        if (headerDot) {
-          headerDot.className = 'w-2 h-2 rounded-full bg-canvas animate-ping';
-        }
-
-        // Sandbox Status Bar
-        if (weClosedBtn) weClosedBtn.classList.remove('hidden');
-        if (timerPulse) timerPulse.className = 'w-2 h-2 rounded-full bg-tealOptimal animate-ping';
-        if (timerStatusLabel) {
-          timerStatusLabel.innerHTML = `<span class="text-tealOptimal font-semibold">Flush Active: ${formatted}</span> (${STATE.openWindowCount} of ${STATE.windows.length} windows open · ${STATE.totalOpenArea.toFixed(1)} m²)`;
-        }
-
-        // CAD Badge
-        if (badge) {
-          const achOpen = (getCurrentAirflowQ() / STATE.roomVolume).toFixed(1);
-          badge.innerText = `${achOpen} ACH NATURAL FLUSH`;
-          badge.className = 'text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-tealOptimal/15 text-tealOptimal border border-tealOptimal/30';
-        }
-
-        // Telemetry Subheader Strip
-        const stripDecision = document.getElementById('stripDecision');
-        if (stripDecision) {
-          stripDecision.innerText = `VENTILATION FLUSH ACTIVE (${formatted} elapsed · ${STATE.openWindowCount} Win Open)`;
-          stripDecision.className = 'text-tealOptimal font-medium';
-        }
+      } else if (d.mode === 'warp') {
+        strip.hidden = false;
+        $('demoTag').textContent = 'DAY SIM';
+        $('demoCap').textContent = d.caption || 'Fast-forwarding a working day';
+        var dots2 = $('demoDots').children;
+        for (var j = 0; j < dots2.length; j++) dots2[j].className = '';
       } else {
-        // Closed state
-        if (timerLabel) {
-          timerLabel.innerText = 'NEXT WINDOW ACTION';
-          timerLabel.className = 'text-[10px] font-mono-tabular uppercase text-inkMuted block';
-        }
-        if (durationSubLabel) durationSubLabel.innerText = 'FLUSH DURATION';
-        if (cdDisplay) {
-          const mins = Math.floor(STATE.countdownSeconds / 60);
-          const secs = STATE.countdownSeconds % 60;
-          cdDisplay.innerText = `T - ${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
-          cdDisplay.className = 'text-2xl font-bold font-mono-tabular text-tealOptimal';
-        }
-        const reqMins = Math.max(3, Math.min(12, Math.round((STATE.co2 - 550) / 120)));
-        if (flushDurDisplay) {
-          flushDurDisplay.innerText = `${reqMins} mins (${Math.min(2, STATE.windows.length)} Win)`;
-        }
-        if (activeTimerBadge) activeTimerBadge.classList.add('hidden');
-        if (cardFlushBtn) {
-          cardFlushBtn.innerText = 'EXECUTE FLUSH';
-          cardFlushBtn.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-tealOptimal/15 text-tealOptimal hover:bg-tealOptimal hover:text-canvas transition border border-tealOptimal/30 cursor-pointer';
-        }
-        if (cardSessionReport) {
-          if (lastFlushRecord) {
-            cardSessionReport.innerHTML = `Last: <strong class="text-tealOptimal font-normal">${lastFlushRecord.durationStr} (-${lastFlushRecord.drop} ppm)</strong>`;
-          } else {
-            cardSessionReport.innerHTML = `Target: <strong class="text-inkPrimary font-normal">580 ppm</strong>`;
-          }
-        }
-
-        // Header Action Button
-        if (headerBtn) {
-          headerBtn.className = 'flex items-center gap-2 text-xs font-mono-tabular font-medium px-3 py-1.5 rounded-md bg-tealOptimal/10 hover:bg-tealOptimal/20 text-tealOptimal border border-tealOptimal/30 transition cursor-pointer';
-        }
-        if (headerLabel) {
-          headerLabel.innerText = `Trigger Window Flush (${Math.min(2, STATE.windows.length)} Win)`;
-        }
-        if (headerDot) {
-          headerDot.className = 'w-2 h-2 rounded-full bg-tealOptimal';
-        }
-
-        // Sandbox Status Bar
-        if (weClosedBtn) weClosedBtn.classList.add('hidden');
-        if (timerPulse) timerPulse.className = 'w-2 h-2 rounded-full bg-inkMuted';
-        if (timerStatusLabel) {
-          if (lastFlushRecord) {
-            timerStatusLabel.innerHTML = `<span class="text-inkSecondary">Windows Closed</span> · <span class="text-tealOptimal">Last flush: ${lastFlushRecord.durationStr} (-${lastFlushRecord.drop} ppm)</span>`;
-          } else {
-            timerStatusLabel.innerText = `Windows Closed (0 m² active · Infiltration 0.25 ACH)`;
-          }
-        }
-
-        // CAD Badge
-        if (badge) {
-          badge.innerText = '0.25 ACH INFILTRATION';
-          badge.className = 'text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-canvas text-inkSecondary border border-borderLine';
-        }
-
-        // Telemetry Subheader Strip
-        const stripDecision = document.getElementById('stripDecision');
-        if (stripDecision) {
-          stripDecision.innerText = `Open ${Math.min(2, STATE.windows.length)} Windows in 06m 12s (Duration: 6 min)`;
-          stripDecision.className = 'text-iceForecast';
-        }
+        strip.hidden = true;
       }
     }
 
-    function renderQuickOpenButtons(containerId) {
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      container.innerHTML = '';
+    /* ------------------------------------------------------------------
+       Hero + crowd + focus
+       ------------------------------------------------------------------ */
+    function renderHero(band) {
+      document.body.setAttribute('data-tone', band.tone);
+      $('heroIcon').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + band.icon + '</svg>';
+      $('heroEyebrow').textContent = roomShort() + ' · ' + Caelum.clockString().slice(0, 5);
+      $('heroHeadline').innerHTML = '';
+      var lead = document.createElement('em');
+      lead.textContent = band.lead;
+      $('heroHeadline').appendChild(lead);
+      $('heroHeadline').appendChild(document.createTextNode(' — ' + band.rest));
+      $('heroSub').textContent = band.sub;
+      $('heroPpm').textContent = 'CO₂ ' + ppm(STATE.co2) + ' ppm';
+    }
 
-      const totalWin = STATE.windows.length;
-      const openCount = STATE.openWindowCount;
+    function renderCrowd() {
+      var cap = Math.max(1, STATE.capacity || 1);
+      var occ = Math.max(0, STATE.occupancy);
+      var ratio = Math.min(1, occ / cap);
+      var C = 314.16;
+      $('gaugeArc').style.strokeDashoffset = String(C * (1 - ratio));
+      var cls, label, color;
+      if (occ > cap) { cls = 'crowd-bad'; label = 'Over capacity'; color = '#EF4444'; }
+      else if (ratio >= 0.85) { cls = 'crowd-bad'; label = occ === cap ? 'Full' : 'Almost full'; color = '#EF4444'; }
+      else if (ratio >= 0.5) { cls = 'crowd-warm'; label = 'Filling up'; color = '#F59E0B'; }
+      else { cls = 'crowd-fresh'; label = occ === 0 ? 'Empty' : 'Spacious'; color = '#22C55E'; }
+      $('gaugeArc').setAttribute('stroke', color);
+      var chip = $('crowdChip');
+      chip.className = 'chip ' + cls;
+      chip.textContent = label;
+      $('gaugeNum').textContent = String(occ);
+      $('gaugeOf').textContent = 'of ' + cap + ' seats';
+      $('seatsFree').textContent = occ > cap ? (occ - cap) + ' over' : plural(cap - occ, 'seat') + ' free';
+      $('gaugeA11y').setAttribute('aria-label', occ + ' of ' + cap + ' seats taken');
+    }
 
-      // "0 Closed" button
-      const btn0 = document.createElement('button');
-      btn0.type = 'button';
-      const is0Active = openCount === 0;
-      btn0.className = `text-[10px] font-mono-tabular px-2 py-0.5 rounded border transition cursor-pointer ${
-        is0Active
-          ? 'bg-elevated text-inkPrimary border-tealOptimal font-semibold shadow-xs'
-          : 'bg-canvas text-inkMuted border-borderLine hover:text-inkSecondary hover:border-inkMuted'
-      }`;
-      btn0.innerText = '0 Closed';
-      btn0.title = 'Close all windows and stop timer';
-      btn0.addEventListener('click', () => {
-        closeAllWindowsAndStopTimer();
-      });
-      container.appendChild(btn0);
+    function renderFocus(band) {
+      var cog = Caelum.evaluateHarvardCOGfx(STATE.co2);
+      var cpi = Math.round(cog.overall);
+      $('cpiNum').textContent = String(cpi);
+      $('cpiBar').style.width = cpi + '%';
+      var chip = $('focusChip');
+      chip.textContent = cpi >= 95 ? 'Full focus' : cpi >= 80 ? 'Sharp' : cpi >= 65 ? 'Slightly dulled' : cpi >= 50 ? 'Dulled' : 'Foggy';
 
-      // Buttons for 1 .. totalWin
-      for (let i = 1; i <= totalWin; i++) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        const isCurrentCount = openCount === i;
-        btn.className = `text-[10px] font-mono-tabular px-2 py-0.5 rounded border transition cursor-pointer ${
-          isCurrentCount
-            ? 'bg-tealOptimal/20 text-tealOptimal border-tealOptimal font-bold shadow-xs'
-            : 'bg-canvas text-inkSecondary border-borderLine hover:text-inkPrimary hover:border-inkMuted'
-        }`;
-        btn.innerText = i === totalWin && totalWin > 1 ? `All (${i})` : `${i} Win`;
-        btn.title = `Say you opened ${i} window${i > 1 ? 's' : ''}`;
-        const countToSet = i;
-        btn.addEventListener('click', () => {
-          setOpenWindowsCount(countToSet);
-        });
-        container.appendChild(btn);
+      var worst = null;
+      DOMAINS.forEach(function (d) { if (worst === null || cog[d[0]] < cog[worst[0]]) worst = d; });
+      var drop = 100 - cog[worst[0]];
+      var line = $('worstLine');
+      line.textContent = '';
+      if (drop <= 2) {
+        line.textContent = 'Air is not holding anyone back.';
+      } else {
+        line.appendChild(document.createTextNode(worst[1] + ' '));
+        var s = document.createElement('strong');
+        s.textContent = '−' + drop + '%';
+        line.appendChild(s);
       }
     }
 
-    function renderIndividualWindowsList() {
-      const list = document.getElementById('individualWindowsList');
-      if (!list) return;
-      list.innerHTML = '';
+    /* ------------------------------------------------------------------
+       Next action card + big button
+       ------------------------------------------------------------------ */
+    var pending = null;           // {mode, until}
+    function renderAction(d) {
+      var rec = Caelum.recommendation();
+      var card = $('actionCard');
+      var title = $('actionTitle'), sub = $('actionSub'), chip = $('actionChip'), btn = $('actionBtn');
+      var state, mode;
 
-      STATE.windows.forEach((win, idx) => {
-        const card = document.createElement('div');
-        card.className = `p-2 rounded bg-elevated border transition flex flex-col justify-between gap-1.5 ${
-          win.isOpen ? 'border-tealOptimal/50 bg-tealOptimal/5' : 'border-borderLine'
-        }`;
+      if (STATE.isWindowOpen) {
+        mode = 'close';
+        var fresh = STATE.co2 < 800;
+        state = 'open';
+        chip.textContent = 'Windows open';
+        title.textContent = fresh ? 'Fresh again' : 'Fresh air coming in';
+        sub.textContent = fresh
+          ? 'The air has recovered. You can close the windows.'
+          : 'Open for ' + mmss(Caelum.FLUSH.elapsedSec) + ' · ' + plural(STATE.openWindowCount, 'window') + ' · CO₂ ' + ppm(STATE.co2) + ' ppm and falling.';
+        btn.textContent = 'We closed them';
+        btn.className = 'btn-big go';
+      } else if (rec.over) {
+        mode = 'open';
+        state = 'now';
+        chip.textContent = 'Act now';
+        title.textContent = 'Open ' + plural(rec.windows, 'window') + ' for ' + rec.flushMinutes + ' min';
+        sub.textContent = 'The air is already stuffy (above 1,000 ppm).';
+        btn.textContent = 'I opened them';
+        btn.className = 'btn-big warn';
+      } else if (rec.minutesUntilStuffy == null) {
+        mode = 'open';
+        state = 'calm';
+        chip.textContent = 'All good';
+        title.textContent = 'Air stays fresh';
+        sub.textContent = 'No ventilation needed at this headcount.';
+        btn.textContent = 'I opened the windows';
+        btn.className = 'btn-big quiet';
+      } else {
+        mode = 'open';
+        var m = Math.max(1, Math.round(rec.minutesUntilStuffy));
+        var soon = m <= 30;
+        state = soon ? 'soon' : 'calm';
+        chip.textContent = soon ? 'Heads up' : 'All good';
+        title.textContent = 'Stuffy in ~' + (m >= 90 ? Math.floor(m / 60) + ' h ' + (m % 60 ? (m % 60) + ' min' : '').trim() : m + ' min');
+        sub.textContent = soon
+          ? 'Open ' + plural(rec.windows, 'window') + ' for ' + rec.flushMinutes + ' min to stay sharp.'
+          : 'Air is fine for now. We will nudge you in good time.';
+        btn.textContent = 'I opened them';
+        btn.className = 'btn-big ' + (soon ? 'warn' : 'quiet');
+      }
 
-        card.innerHTML = `
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span class="w-2 h-2 rounded-full ${win.isOpen ? 'bg-tealOptimal animate-pulse' : 'bg-inkMuted'} shrink-0"></span>
-              <span class="text-xs font-mono-tabular font-medium text-inkPrimary truncate" title="${win.name}">${win.name}</span>
-            </div>
-            <button type="button" class="toggle-win-btn text-[10px] font-mono-tabular font-semibold px-2 py-0.5 rounded border transition shrink-0 cursor-pointer ${
-              win.isOpen
-                ? 'bg-tealOptimal text-canvas border-tealOptimal hover:bg-tealOptimal/90'
-                : 'bg-canvas text-inkMuted border-borderLine hover:text-inkPrimary hover:border-inkMuted'
-            }">
-              ${win.isOpen ? 'OPEN' : 'CLOSED'}
-            </button>
-          </div>
-          <div class="flex items-center gap-2 pt-1 border-t border-borderLine/50 text-xs font-mono-tabular">
-            <span class="text-[10px] text-inkMuted uppercase shrink-0">Size:</span>
-            <input type="range" min="0.2" max="3.5" step="0.1" value="${win.area}" class="inst-slider win-area-slider flex-1 cursor-pointer">
-            <span class="win-area-text text-tealOptimal font-semibold text-[11px] w-12 text-right shrink-0">${win.area.toFixed(1)} m²</span>
-          </div>
-        `;
+      chip.className = 'chip ' + (state === 'now' || state === 'soon' ? 'crowd-warm' : 'crowd-fresh');
+      card.setAttribute('data-state', state);
+      card.dataset.mode = mode;
+      var emphasise = d.mode === 'guided' && d.pulse;
+      card.classList.toggle('pulse', !!emphasise);
 
-        const toggleBtn = card.querySelector('.toggle-win-btn');
-        toggleBtn.addEventListener('click', () => {
-          toggleIndividualWindow(idx);
-        });
-
-        const slider = card.querySelector('.win-area-slider');
-        const areaText = card.querySelector('.win-area-text');
-        slider.addEventListener('input', (e) => {
-          const val = parseFloat(e.target.value);
-          areaText.innerText = `${val.toFixed(1)} m²`;
-          updateWindowArea(idx, val);
-        });
-
-        list.appendChild(card);
-      });
+      if (pending && (pending.mode !== mode || Date.now() > pending.until)) pending = null;
+      if (pending) { btn.textContent = 'Telling the room…'; btn.disabled = true; }
+      else btn.disabled = false;
     }
 
-    function updateWindowControlsUI() {
-      const winCountLabel = document.getElementById('winCountLabel');
-      const winCountNum = document.getElementById('winCountNum');
-      const winSlider = document.getElementById('winSlider');
-      const totalRoomWinArea = document.getElementById('totalRoomWinArea');
-
-      if (winSlider) winSlider.value = STATE.windows.length;
-      if (winCountLabel) winCountLabel.innerText = `${STATE.windows.length} Windows`;
-      if (winCountNum) winCountNum.innerText = STATE.windows.length;
-      if (totalRoomWinArea) totalRoomWinArea.innerText = `${STATE.totalWindowArea.toFixed(1)} m²`;
-
-      renderQuickOpenButtons('cardWinButtons');
-      renderQuickOpenButtons('sandboxWinButtons');
-      renderIndividualWindowsList();
-      updateTimerDisplayUI();
+    function onActionClick() {
+      var mode = $('actionCard').dataset.mode;
+      pending = { mode: mode, until: Date.now() + 1500 };
+      $('actionBtn').disabled = true;
+      if (mode === 'close') Caelum.command({ action: 'closeWindows' });
+      else Caelum.requestOpenWindows(Caelum.recommendation().windows);
+      setTimeout(schedule, 1600);
     }
 
-    /* =====================================================================
-       3. MULTI-HORIZON CHART.JS INITIALIZATION & DYNAMIC RECOMPUTATION
-       ===================================================================== */
-    let co2Chart, occChart;
-    const TIME_LABELS = [
-      "-2h00", "-1h45", "-1h30", "-1h15", "-1h00", "-45m", "-30m", "-15m",
-      "NOW",
-      "+15m", "+30m", "+45m", "+1h00", "+1h30", "+2h00", "+2h30", "+3h00", "+4h00"
-    ];
+    /* ------------------------------------------------------------------
+       Forecast chart
+       ------------------------------------------------------------------ */
+    var chart = null;
+    var chartInfo = { tl: [], best: null, nowTod: 0 };
 
-    const crosshairPlugin = {
-      id: 'instCrosshair',
-      afterDraw: (chart) => {
-        if (chart.tooltip?._active?.length) {
-          const activePoint = chart.tooltip._active[0];
-          const ctx = chart.ctx;
-          const x = activePoint.element.x;
-          const topY = chart.scales.y.top;
-          const bottomY = chart.scales.y.bottom;
-          ctx.save();
-          ctx.beginPath();
-          ctx.moveTo(x, topY);
-          ctx.lineTo(x, bottomY);
+    function colorForPpm(v) {
+      return v < 750 ? '#22C55E' : v < 1000 ? '#65A30D' : v < 1400 ? '#F59E0B' : '#EF4444';
+    }
+
+    var decorPlugin = {
+      id: 'caelumDecor',
+      beforeDatasetsDraw: function (c) {
+        var a = c.chartArea; if (!a) return;
+        var ctx = c.ctx, y = c.scales.y, x = c.scales.x;
+        ctx.save();
+        function band(lo, hi, col) {
+          var top = Math.max(a.top, Math.min(a.bottom, y.getPixelForValue(hi)));
+          var bot = Math.max(a.top, Math.min(a.bottom, y.getPixelForValue(lo)));
+          if (bot - top < 1) return;
+          ctx.fillStyle = col;
+          ctx.fillRect(a.left, top, a.right - a.left, bot - top);
+        }
+        band(0, 750, 'rgba(34,197,94,.08)');
+        band(1000, 1400, 'rgba(245,158,11,.08)');
+        band(1400, 1e6, 'rgba(239,68,68,.08)');
+
+        // auto-flush windows
+        var tl = chartInfo.tl, start = null;
+        for (var i = 0; i <= tl.length; i++) {
+          var f = i < tl.length && tl[i].flushing;
+          if (f && start === null) start = tl[i].t;
+          if (!f && start !== null) {
+            var endT = tl[i - 1].t + 5;
+            var x1 = x.getPixelForValue(start), x2 = Math.min(a.right, x.getPixelForValue(endT));
+            ctx.fillStyle = 'rgba(134,239,172,.38)';
+            ctx.fillRect(x1, a.top, Math.max(2, x2 - x1), a.bottom - a.top);
+            start = null;
+          }
+        }
+
+        // 1,000 ppm line
+        var y1k = y.getPixelForValue(1000);
+        if (y1k > a.top && y1k < a.bottom) {
+          ctx.setLineDash([5, 5]);
+          ctx.strokeStyle = 'rgba(180,83,9,.55)';
           ctx.lineWidth = 1;
-          ctx.strokeStyle = 'rgba(156, 163, 175, 0.35)';
-          ctx.setLineDash([3, 3]);
-          ctx.stroke();
-          ctx.restore();
+          ctx.beginPath(); ctx.moveTo(a.left, y1k); ctx.lineTo(a.right, y1k); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#B45309';
+          ctx.font = '600 11px "JetBrains Mono", monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText('Stuffy 1,000', a.right - 6, y1k - 5);
         }
+        ctx.restore();
+      },
+      afterDatasetsDraw: function (c) {
+        var a = c.chartArea, b = chartInfo.best; if (!a || !b) return;
+        var ctx = c.ctx, x = c.scales.x, y = c.scales.y;
+        var px = x.getPixelForValue(b.t);
+        var py = y.getPixelForValue(Math.min(b.co2, y.max));
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#15803D';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(px, a.top + 26); ctx.lineTo(px, a.bottom); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = '#15803D'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+        var label = '★ ' + (b.isNow ? 'Now' : Caelum.formatClock(b.tod));
+        ctx.font = '700 12px "General Sans", sans-serif';
+        var w = ctx.measureText(label).width + 18;
+        var lx = Math.max(a.left, Math.min(a.right - w, px - w / 2));
+        ctx.fillStyle = '#15803D';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(lx, a.top + 2, w, 22, 11); else ctx.rect(lx, a.top + 2, w, 22);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, lx + w / 2, a.top + 13);
+        ctx.restore();
       }
     };
 
-    function buildForecastArrays() {
-      const cNow = Math.round(STATE.co2);
-      const past = [
-        490, 540, 630, 740,
-        Math.round(cNow * 0.72),
-        Math.round(cNow * 0.81),
-        Math.round(cNow * 0.89),
-        Math.round(cNow * 0.95),
-        cNow
-      ];
-      const groundTruth = past.map((v, i) => v + (i % 2 === 0 ? 18 : -14));
-
-      const dtSteps = [0.25, 0.25, 0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 1.0];
-      const noIntervention = [cNow];
-      const upperSigma = [cNow];
-      const lowerSigma = [cNow];
-      const optimalFlush = [cNow];
-
-      let cUnmitigated = cNow;
-      let cUpper = cNow;
-      let cLower = cNow;
-      let cOpt = cNow;
-
-      const qClosed = getAirflowQ(false);
-      const qOpen = getAirflowQ(true);
-
-      for (let i = 0; i < dtSteps.length; i++) {
-        const dt = dtSteps[i];
-        cUnmitigated = stepMassBalanceCO2(cUnmitigated, STATE.occupancy, STATE.roomVolume, qClosed, dt, STATE.co2GenPerPerson);
-        cUpper = stepMassBalanceCO2(cUpper, STATE.occupancy * 1.22 + 1, STATE.roomVolume, qClosed * 0.85, dt, STATE.co2GenPerPerson);
-        cLower = stepMassBalanceCO2(cLower, Math.max(0, STATE.occupancy * 0.8 - 0.5), STATE.roomVolume, qClosed * 1.15, dt, STATE.co2GenPerPerson);
-
-        const useFlush = STATE.isWindowOpen || i === 0 || (cOpt > 1100 && i === 4);
-        const qStep = useFlush ? qOpen : qClosed * 1.3;
-        cOpt = stepMassBalanceCO2(cOpt, STATE.occupancy, STATE.roomVolume, qStep, dt, STATE.co2GenPerPerson);
-
-        noIntervention.push(Math.round(cUnmitigated));
-        upperSigma.push(Math.round(cUpper));
-        lowerSigma.push(Math.round(cLower));
-        optimalFlush.push(Math.round(cOpt));
+    function initChart() {
+      if (typeof Chart === 'undefined') {
+        $('chartFallback').hidden = false;
+        return;
       }
-
-      return {
-        pastSeries: [...past, ...Array(9).fill(null)],
-        groundTruthSeries: [...groundTruth, ...Array(9).fill(null)],
-        forecastSeries: [...Array(8).fill(null), ...noIntervention],
-        upperSeries: [...Array(8).fill(null), ...upperSigma],
-        lowerSeries: [...Array(8).fill(null), ...lowerSigma],
-        optimalSeries: [...Array(8).fill(null), ...optimalFlush]
-      };
-    }
-
-    function initCharts() {
-      const series = buildForecastArrays();
-      const ctx1 = document.getElementById('co2ForecastChart').getContext('2d');
-
-      co2Chart = new Chart(ctx1, {
+      var ctx = $('forecastChart').getContext('2d');
+      chart = new Chart(ctx, {
         type: 'line',
-        plugins: [crosshairPlugin],
+        plugins: [decorPlugin],
         data: {
-          labels: TIME_LABELS,
-          datasets: [
-            {
-              label: 'Virtual CO₂ C(t)',
-              data: series.pastSeries,
-              borderColor: '#F3F4F6',
-              backgroundColor: 'rgba(243, 244, 246, 0.05)',
-              borderWidth: 2,
-              fill: true,
-              tension: 0.25,
-              pointRadius: (ctx) => ctx.dataIndex === 8 ? 5 : 0,
-              pointBackgroundColor: '#F3F4F6',
-              pointBorderColor: '#0A0B0D',
-              pointBorderWidth: 2
-            },
-            {
-              label: 'Aranet4 NDIR Ground Truth',
-              data: series.groundTruthSeries,
-              borderColor: '#9CA3AF',
-              borderWidth: 1.5,
-              borderDash: [3, 3],
-              pointRadius: 2,
-              pointBackgroundColor: '#9CA3AF',
-              tension: 0.2,
-              hidden: !STATE.showGroundTruth
-            },
-            {
-              label: '4h ML Forecast (Unmitigated)',
-              data: series.forecastSeries,
-              borderColor: '#60A5FA',
-              borderWidth: 2,
-              borderDash: [5, 4],
-              tension: 0.3,
-              pointRadius: 0
-            },
-            {
-              label: 'Optimal Window Flush Path',
-              data: series.optimalSeries,
-              borderColor: '#2DD4BF',
-              borderWidth: 2,
-              borderDash: [2, 3],
-              tension: 0.25,
-              pointRadius: 0
-            },
-            {
-              label: '+1σ Monte Carlo Upper',
-              data: series.upperSeries,
-              borderColor: 'transparent',
-              backgroundColor: 'rgba(96, 165, 250, 0.11)',
-              fill: '+1',
-              tension: 0.3,
-              pointRadius: 0
-            },
-            {
-              label: '-1σ Monte Carlo Lower',
-              data: series.lowerSeries,
-              borderColor: 'transparent',
-              fill: false,
-              tension: 0.3,
-              pointRadius: 0
+          datasets: [{
+            label: 'CO₂ (ppm)',
+            data: [],
+            parsing: false,
+            borderWidth: 3.5,
+            tension: 0.4,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            fill: true,
+            borderColor: '#0EA5E9',
+            segment: { borderColor: function (s) { return colorForPpm(s.p1.parsed.y); } },
+            backgroundColor: function (c) {
+              var a = c.chart.chartArea;
+              if (!a) return 'rgba(14,165,233,.15)';
+              var g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+              g.addColorStop(0, 'rgba(14,165,233,.22)');
+              g.addColorStop(1, 'rgba(14,165,233,0)');
+              return g;
             }
-          ]
+          }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
+          animation: false,
+          interaction: { mode: 'nearest', axis: 'x', intersect: false },
+          layout: { padding: { top: 4, right: 4 } },
           plugins: {
             legend: { display: false },
             tooltip: {
-              backgroundColor: '#111317',
-              borderColor: '#22262F',
-              borderWidth: 1,
-              titleColor: '#F3F4F6',
-              bodyColor: '#9CA3AF',
-              titleFont: { family: 'IBM Plex Mono', size: 11, weight: '600' },
-              bodyFont: { family: 'IBM Plex Mono', size: 11 },
+              backgroundColor: '#0F172A',
               padding: 10,
-              filter: (item) => !item.dataset.label.includes('Monte Carlo'),
+              titleFont: { family: 'General Sans', size: 13, weight: '600' },
+              bodyFont: { family: 'JetBrains Mono', size: 12 },
+              displayColors: false,
               callbacks: {
-                label: (ctx) => ` ${ctx.dataset.label}: ${ctx.raw !== null ? ctx.raw + ' ppm' : '—'}`
+                title: function (items) {
+                  var t = items[0].parsed.x;
+                  return t === 0 ? 'Now' : Caelum.formatClock(chartInfo.nowTod + t);
+                },
+                label: function (item) {
+                  var p = chartInfo.tl[Math.round(item.parsed.x / 5)];
+                  var out = ppm(item.parsed.y) + ' ppm · ' + bandFor(item.parsed.y).lead.toLowerCase();
+                  return p ? [out, p.flushing ? 'windows open (flush)' : plural(Math.round(p.occ), 'person') + ' expected'] : out;
+                }
               }
             }
           },
           scales: {
             x: {
-              grid: { color: 'rgba(34, 38, 47, 0.6)' },
-              ticks: { color: '#6B7280', font: { family: 'IBM Plex Mono', size: 10 } }
+              type: 'linear', min: 0, max: 240,
+              grid: { color: 'rgba(226,232,240,.7)', drawTicks: false },
+              border: { display: false },
+              afterBuildTicks: function (axis) {
+                var ticks = [{ value: 0 }];
+                var first = Math.ceil((chartInfo.nowTod + 1) / 60) * 60 - chartInfo.nowTod;
+                if (first < 40) first += 60;           // avoid crowding the "Now" label
+                for (var v = first; v <= 240; v += 60) ticks.push({ value: v });
+                axis.ticks = ticks;
+              },
+              ticks: {
+                color: '#64748B', padding: 8,
+                font: { family: 'JetBrains Mono', size: 11 },
+                callback: function (v) { return v === 0 ? 'Now' : Caelum.formatClock(chartInfo.nowTod + v); }
+              }
             },
             y: {
-              min: 380,
-              max: 2600,
-              grid: { color: 'rgba(34, 38, 47, 0.6)' },
+              min: 400, max: 1600,
+              grid: { color: 'rgba(226,232,240,.7)', drawTicks: false },
+              border: { display: false },
               ticks: {
-                color: '#6B7280',
-                font: { family: 'IBM Plex Mono', size: 10 },
-                callback: (val) => val + ' ppm'
+                color: '#64748B', padding: 8, maxTicksLimit: 6,
+                font: { family: 'JetBrains Mono', size: 11 },
+                callback: function (v) { return v.toLocaleString('en-GB'); }
               }
             }
           }
         }
       });
-
-      const ctx2 = document.getElementById('occupancyChart').getContext('2d');
-      const calSchedule = [4, 4, 4, 4, 10, 10, 10, 10, 12, 12, 12, 12, 14, 14, 14, 14, 4, 2];
-      const bleActual =   [3, 3, 4, 4,  7,  7,  7,  7, STATE.occupancy, STATE.occupancy, 9, 9, 11, 11, 11, 10, 3, 1];
-
-      occChart = new Chart(ctx2, {
-        type: 'line',
-        data: {
-          labels: TIME_LABELS,
-          datasets: [
-            {
-              label: 'Scheduled Calendar Prior',
-              data: calSchedule,
-              borderColor: '#6B7280',
-              backgroundColor: 'rgba(107, 114, 128, 0.08)',
-              borderWidth: 1.2,
-              stepped: true,
-              fill: true,
-              pointRadius: 0
-            },
-            {
-              label: 'BLE Filtered + ML Nowcast N(t)',
-              data: bleActual,
-              borderColor: '#60A5FA',
-              backgroundColor: 'rgba(96, 165, 250, 0.18)',
-              borderWidth: 1.8,
-              stepped: true,
-              fill: true,
-              pointRadius: 0
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              backgroundColor: '#111317',
-              borderColor: '#22262F',
-              borderWidth: 1,
-              titleFont: { family: 'IBM Plex Mono', size: 10 },
-              bodyFont: { family: 'IBM Plex Mono', size: 10 }
-            }
-          },
-          scales: {
-            x: { display: false },
-            y: {
-              min: 0,
-              max: 20,
-              grid: { color: 'rgba(34, 38, 47, 0.45)' },
-              ticks: { color: '#6B7280', font: { family: 'IBM Plex Mono', size: 9 }, stepSize: 5 }
-            }
-          }
-        }
-      });
     }
 
-    /* =====================================================================
-       4. SPATIAL 2D CAD TOPOLOGY & BLE PERIMETER RENDERER
-       ===================================================================== */
-    const cadCanvas = document.getElementById('cadTopologyCanvas');
-    const cadCtx = cadCanvas.getContext('2d');
-    let flowTick = 0;
+    function renderForecast() {
+      var tl = Caelum.forecastTimeline(240, 5);
+      var best = Caelum.bestTimeFromTimeline(tl);
+      chartInfo.tl = tl; chartInfo.best = best; chartInfo.nowTod = Caelum.clockMinutesOfDay();
 
-    function resizeCadCanvas() {
-      cadCanvas.width = cadCanvas.offsetWidth || 380;
-      cadCanvas.height = cadCanvas.offsetHeight || 165;
+      $('bestTitle').textContent = best.isNow ? 'Best time to book: right now' : 'Best time to book: ' + Caelum.formatClock(best.tod);
+      $('bestSub').textContent = (best.isNow ? 'Air only gets stuffier from here' : 'Freshest bookable air in the next 4 hours') + ' · ~' + ppm(best.co2) + ' ppm';
+
+      if (!chart) return;
+      var peak = 0;
+      var data = tl.map(function (p) { if (p.co2 > peak) peak = p.co2; return { x: p.t, y: Math.round(p.co2) }; });
+      chart.data.datasets[0].data = data;
+      chart.options.scales.y.max = Math.min(2600, Math.max(1600, Math.ceil((peak + 60) / 200) * 200));
+      chart.update('none');
     }
 
-    function renderCadTopology() {
-      const w = cadCanvas.width;
-      const h = cadCanvas.height;
-      cadCtx.clearRect(0, 0, w, h);
-      flowTick += 0.04;
-
-      const padX = 24;
-      const padY = 22;
-      const roomW = w - padX * 2;
-      const roomH = h - padY * 2;
-
-      // 1. Thermal/Gas Density Gradient Fill inside Room Footprint
-      const centerGrad = cadCtx.createRadialGradient(
-        w * 0.5, h * 0.52, 8,
-        w * 0.5, h * 0.52, roomW * 0.55
-      );
-      if (STATE.co2 < 750) {
-        centerGrad.addColorStop(0, 'rgba(45, 212, 191, 0.14)');
-        centerGrad.addColorStop(1, 'rgba(45, 212, 191, 0.02)');
-      } else if (STATE.co2 < 1350) {
-        centerGrad.addColorStop(0, 'rgba(251, 191, 36, 0.18)');
-        centerGrad.addColorStop(1, 'rgba(251, 191, 36, 0.02)');
-      } else {
-        centerGrad.addColorStop(0, 'rgba(248, 113, 113, 0.24)');
-        centerGrad.addColorStop(1, 'rgba(248, 113, 113, 0.03)');
-      }
-      cadCtx.fillStyle = centerGrad;
-      cadCtx.fillRect(padX, padY, roomW, roomH);
-
-      // 2. Architectural Room Perimeter Walls
-      cadCtx.strokeStyle = '#4B5563';
-      cadCtx.lineWidth = 1.5;
-      cadCtx.strokeRect(padX, padY, roomW, roomH);
-
-      // 3. Conference Table Wireframe in Center
-      const tableW = roomW * 0.48;
-      const tableH = roomH * 0.36;
-      const tableX = (w - tableW) / 2;
-      const tableY = (h - tableH) / 2;
-      cadCtx.strokeStyle = '#22262F';
-      cadCtx.fillStyle = 'rgba(17, 19, 23, 0.75)';
-      cadCtx.fillRect(tableX, tableY, tableW, tableH);
-      cadCtx.strokeRect(tableX, tableY, tableW, tableH);
-
-      // 4. Top Wall Window Apertures & Dynamic Airflow Vectors
-      const totalWindows = STATE.windows.length;
-      const displayCount = Math.min(totalWindows, 6);
-      const openCount = STATE.openWindowCount;
-
-      for (let i = 0; i < displayCount; i++) {
-        const win = STATE.windows[i];
-        const baseWidth = 36;
-        // Window aperture width scales with window's configurable area
-        const winWidth = Math.max(20, Math.min(56, Math.round(baseWidth * Math.sqrt(win.area || 1.0))));
-        const wx = padX + ((i + 1) * roomW) / (displayCount + 1) - winWidth / 2;
-
-        // Clear wall segment for window opening
-        cadCtx.fillStyle = '#0A0B0D';
-        cadCtx.fillRect(wx, padY - 2, winWidth, 4);
-
-        // Window sash line
-        cadCtx.strokeStyle = win.isOpen ? '#2DD4BF' : '#4B5563';
-        cadCtx.lineWidth = 2;
-        cadCtx.beginPath();
-        cadCtx.moveTo(wx, padY);
-        cadCtx.lineTo(wx + winWidth, win.isOpen ? padY + 7 : padY);
-        cadCtx.stroke();
-
-        // Window index label (W1, W2, etc.)
-        cadCtx.fillStyle = win.isOpen ? '#2DD4BF' : '#6B7280';
-        cadCtx.font = '8px "IBM Plex Mono", monospace';
-        cadCtx.textAlign = 'center';
-        cadCtx.fillText(`W${i + 1}`, wx + winWidth / 2, padY - 6);
-
-        // Laminar airflow streamlines if this window is currently open
-        if (win.isOpen) {
-          cadCtx.strokeStyle = 'rgba(45, 212, 191, 0.45)';
-          cadCtx.lineWidth = Math.max(1, Math.min(2.5, (win.area || 1.0) * 1.2));
-          cadCtx.setLineDash([4, 4]);
-          cadCtx.lineDashOffset = -flowTick * 12;
-          cadCtx.beginPath();
-          cadCtx.moveTo(wx + winWidth / 2, padY + 4);
-          cadCtx.lineTo(wx + winWidth / 2, padY + roomH - 12);
-          cadCtx.stroke();
-          cadCtx.setLineDash([]);
-        }
-      }
-
-      // Update glazing annotation in CAD
-      const cadGlazingLabel = document.getElementById('cadGlazingLabel');
-      if (cadGlazingLabel) {
-        cadGlazingLabel.innerText = `EXTERIOR GLAZING // ${totalWindows} WINDOWS (${openCount} OPEN · ${STATE.totalOpenArea.toFixed(1)} m²)`;
-      }
-
-      // 5. RSSI Sniffer Perimeter Boundary (Dynamic scale by Control Strength Tx Power)
-      const activeNode = getActiveArduinoNode();
-      const strengthRadScale = {
-        '+8 dBm': 1.15,
-        '+4 dBm': 1.0,
-        '0 dBm': 0.88,
-        '-4 dBm': 0.74,
-        '-12 dBm': 0.58
-      }[activeNode.strength] || 1.0;
-
-      cadCtx.strokeStyle = 'rgba(96, 165, 250, 0.35)';
-      cadCtx.lineWidth = 1.2;
-      cadCtx.setLineDash([3, 3]);
-      cadCtx.beginPath();
-      cadCtx.ellipse(w / 2, h / 2, roomW * 0.46 * strengthRadScale, roomH * 0.44 * strengthRadScale, 0, 0, Math.PI * 2);
-      cadCtx.stroke();
-      cadCtx.setLineDash([]);
-
-      // 5B. Physical Arduino Uno Microcontroller Node(s) On Layout
-      const allArduinoNodes = getArduinoNodes();
-      allArduinoNodes.forEach((node, nIdx) => {
-        const nx = nIdx === 0 ? (w * 0.48) : (w * 0.85);
-        const ny = nIdx === 0 ? (h * 0.54) : (h * 0.78);
-        const isSelected = (nIdx === activeArduinoIndex);
-
-        // Pulsing RF beacon rings
-        const pulseR = 5 + Math.abs(Math.sin(flowTick * 1.6 + nIdx)) * (isSelected ? 9 * strengthRadScale : 5);
-        cadCtx.beginPath();
-        cadCtx.arc(nx, ny, pulseR, 0, Math.PI * 2);
-        cadCtx.fillStyle = isSelected ? 'rgba(45, 212, 191, 0.2)' : 'rgba(96, 165, 250, 0.12)';
-        cadCtx.fill();
-
-        // IC Chip Body
-        cadCtx.fillStyle = isSelected ? '#14B8A6' : '#2563EB';
-        cadCtx.fillRect(nx - 7, ny - 5, 14, 10);
-        cadCtx.strokeStyle = '#FFFFFF';
-        cadCtx.lineWidth = 0.8;
-        cadCtx.strokeRect(nx - 7, ny - 5, 14, 10);
-
-        // Chip Pins
-        cadCtx.fillStyle = '#9CA3AF';
-        [-4, 0, 4].forEach(px => {
-          cadCtx.fillRect(nx + px - 1, ny - 7, 2, 2);
-          cadCtx.fillRect(nx + px - 1, ny + 5, 2, 2);
-        });
-
-        // Label
-        cadCtx.fillStyle = isSelected ? '#2DD4BF' : '#93C5FD';
-        cadCtx.font = '7px "IBM Plex Mono", monospace';
-        cadCtx.textAlign = 'center';
-        cadCtx.fillText(`${node.id} (${node.strength})`, nx, ny + 13);
-      });
-
-      // 6. Active In-Room BLE Device Clusters (Ice Blue Nodes)
-      const activeNodes = Math.min(STATE.occupancy, 18);
-      for (let i = 0; i < activeNodes; i++) {
-        const angle = (i / Math.max(1, activeNodes)) * Math.PI * 2 + 0.3;
-        const rx = tableW * 0.62 + (i % 2) * 12;
-        const ry = tableH * 0.72 + (i % 2) * 8;
-        const nx = w / 2 + Math.cos(angle) * rx;
-        const ny = h / 2 + Math.sin(angle) * ry;
-
-        cadCtx.beginPath();
-        cadCtx.arc(nx, ny, 5.5, 0, Math.PI * 2);
-        cadCtx.fillStyle = 'rgba(96, 165, 250, 0.18)';
-        cadCtx.fill();
-
-        cadCtx.beginPath();
-        cadCtx.arc(nx, ny, 2.5, 0, Math.PI * 2);
-        cadCtx.fillStyle = '#60A5FA';
-        cadCtx.fill();
-      }
-
-      // 7. Rejected Corridor Pass-by Nodes
-      const hallwayPositions = [w * 0.22, w * 0.58, w * 0.81];
-      hallwayPositions.forEach((hx, idx) => {
-        const hy = h - 9;
-        cadCtx.beginPath();
-        cadCtx.arc(hx + Math.sin(flowTick * 0.5 + idx) * 6, hy, 2.2, 0, Math.PI * 2);
-        cadCtx.fillStyle = '#6B7280';
-        cadCtx.fill();
-      });
-
-      requestAnimationFrame(renderCadTopology);
-    }
-
-    /* =====================================================================
-       5. LIVE BLE PACKET SNIFFER STREAM & ARDUINO FLEET ADMIN CONTROLLER
-       ===================================================================== */
-    const DEFAULT_ARDUINO_NODES = [
-      {
-        id: "uno-q-1",
-        name: "Room Core (Desk A)",
-        interval: 2.4,        // Broadcast interval in seconds
-        strength: "+4 dBm",   // RF Control Strength / Tx Power
-        status: "ONLINE",
-        packetsSent: 342,
-        role: "Core Room Scanner",
-        isPrimary: true
-      },
-      {
-        id: "uno-q-2",
-        name: "Perimeter Guard (Door B)",
-        interval: 5.0,        // Broadcast interval in seconds
-        strength: "-4 dBm",   // RF Control Strength / Tx Power
-        status: "ONLINE",
-        packetsSent: 198,
-        role: "Hallway Perimeter Filter",
-        isPrimary: false
-      }
-    ];
-
-    let activeArduinoIndex = 0;
-    let blePacketTimerId = null;
-
-    function getArduinoNodes() {
-      try {
-        const raw = localStorage.getItem('caelum_arduino_fleet');
-        if (!raw) return JSON.parse(JSON.stringify(DEFAULT_ARDUINO_NODES));
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) && parsed.length > 0 ? parsed : JSON.parse(JSON.stringify(DEFAULT_ARDUINO_NODES));
-      } catch (e) {
-        console.warn('Failed to parse arduino nodes from localStorage', e);
-        return JSON.parse(JSON.stringify(DEFAULT_ARDUINO_NODES));
-      }
-    }
-
-    function saveArduinoNodes(nodes) {
-      try {
-        localStorage.setItem('caelum_arduino_fleet', JSON.stringify(nodes));
-      } catch (e) {
-        console.warn('Failed to save arduino nodes to localStorage', e);
-      }
-    }
-
-    function getActiveArduinoNode() {
-      const nodes = getArduinoNodes();
-      if (activeArduinoIndex < 0 || activeArduinoIndex >= nodes.length) {
-        activeArduinoIndex = 0;
-      }
-      return nodes[activeArduinoIndex] || nodes[0];
-    }
-
-    function resetBlePacketTimer(intervalMs) {
-      if (blePacketTimerId) clearInterval(blePacketTimerId);
-      blePacketTimerId = setInterval(pushBlePacketRow, Math.max(300, intervalMs));
-    }
-
-    function syncArduinoUI() {
-      const nodes = getArduinoNodes();
-      if (activeArduinoIndex < 0 || activeArduinoIndex >= nodes.length) {
-        activeArduinoIndex = 0;
-      }
-      const activeNode = nodes[activeArduinoIndex] || nodes[0];
-
-      // 1. Populate/Update Node Dropdown in Sub-Pane B
-      const nodeSelector = document.getElementById('arduinoNodeSelector');
-      if (nodeSelector) {
-        nodeSelector.innerHTML = '';
-        nodes.forEach((n, idx) => {
-          const opt = document.createElement('option');
-          opt.value = idx;
-          opt.innerText = `${n.id} [${n.name}]`;
-          nodeSelector.appendChild(opt);
-        });
-        nodeSelector.value = activeArduinoIndex;
-      }
-
-      // 2. Interval Slider & Display
-      const bleSlider = document.getElementById('bleIntervalSlider');
-      if (bleSlider) bleSlider.value = activeNode.interval;
-      const bleDisp = document.getElementById('bleIntervalDisplay');
-      if (bleDisp) bleDisp.innerText = `${activeNode.interval.toFixed(1)}s`;
-
-      // 3. Control Strength Select & Display
-      const bleStrength = document.getElementById('bleStrengthSelect');
-      if (bleStrength) bleStrength.value = activeNode.strength;
-      const bleStrengthDisp = document.getElementById('bleStrengthDisplay');
-      if (bleStrengthDisp) bleStrengthDisp.innerText = activeNode.strength;
-
-      // 4. Header Active Arduino Node Trigger Pill
-      const headerNode = document.getElementById('headerActiveArduinoNode');
-      if (headerNode) {
-        headerNode.innerText = `${activeNode.id} (${activeNode.strength} · ${activeNode.interval.toFixed(1)}s)`;
-      }
-
-      // 5. Dual-Track Sub-Header Strip Rate
-      const stripRate = document.getElementById('stripBleRate');
-      if (stripRate) {
-        stripRate.innerText = `${activeNode.interval.toFixed(1)}s`;
-      }
-
-      // 6. Packet Counter / Heartbeat Info Strip
-      const counterText = document.getElementById('arduinoPacketCounterText');
-      if (counterText) {
-        counterText.innerText = `Node: ${activeNode.id} · ${activeNode.strength} · Heartbeat ${activeNode.interval.toFixed(1)}s`;
-      }
-
-      // 7. Update internal State and Timer
-      STATE.arduinoBleInterval = activeNode.interval;
-      resetBlePacketTimer(activeNode.interval * 1000);
-    }
-
-    function setArduinoNodeInterval(idx, newSeconds) {
-      const nodes = getArduinoNodes();
-      if (nodes[idx]) {
-        nodes[idx].interval = Math.max(0.5, Math.min(15.0, parseFloat(newSeconds) || 2.4));
-        saveArduinoNodes(nodes);
-        syncArduinoUI();
-      }
-    }
-
-    function setArduinoNodeStrength(idx, strengthVal) {
-      const nodes = getArduinoNodes();
-      if (nodes[idx]) {
-        nodes[idx].strength = strengthVal;
-        saveArduinoNodes(nodes);
-        syncArduinoUI();
-      }
-    }
-
-    function pushBlePacketRow() {
-      const node = getActiveArduinoNode();
-      node.packetsSent = (node.packetsSent || 0) + 1;
-
-      // RF Transmit Power calibration mapping
-      const strengthMap = {
-        '+8 dBm': { base: -42, spread: 20 },
-        '+4 dBm': { base: -48, spread: 20 },
-        '0 dBm': { base: -54, spread: 18 },
-        '-4 dBm': { base: -62, spread: 16 },
-        '-12 dBm': { base: -70, spread: 14 }
-      };
-      const cfg = strengthMap[node.strength] || strengthMap['+4 dBm'];
-
-      const isHallway = Math.random() < 0.28;
-      const rssi = isHallway
-        ? cfg.base - Math.floor(Math.random() * 18) - 14
-        : cfg.base + Math.floor(Math.random() * cfg.spread) - 4;
-      const accepted = rssi > -65;
-      const uuid = '0x' + Math.random().toString(16).substring(2, 6).toUpperCase() + '·' + Math.random().toString(16).substring(2, 4).toUpperCase();
-
-      const stream = document.getElementById('blePacketStream');
-      if (!stream) return;
-      const row = document.createElement('div');
-      row.className = 'px-2.5 py-1.5 flex items-center justify-between text-[11px] font-mono-tabular';
-      row.innerHTML = `
-        <span class="${accepted ? 'text-inkPrimary' : 'text-inkMuted'} font-mono-tabular">${uuid}</span>
-        <span class="${accepted ? 'text-iceForecast font-medium' : 'text-inkMuted'} font-mono-tabular">${node.id} // ${rssi} dBm</span>
-        <span class="text-[9px] px-1.5 py-0.2 rounded font-mono-tabular ${
-          accepted
-            ? 'bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25'
-            : 'bg-canvas text-inkMuted border border-borderLine'
-        }">${accepted ? 'IN-ROOM' : 'FILTERED'}</span>
-      `;
-      stream.prepend(row);
-      if (stream.children.length > 14) {
-        stream.removeChild(stream.lastChild);
-      }
-    }
-
-    /* Modal Fleet Admin Methods */
-    function openArduinoAdminModal() {
-      renderModalArduinoFleet();
-      updateModalPreview();
-      document.getElementById('arduinoAdminModal').classList.remove('hidden');
-    }
-
-    function closeArduinoAdminModal() {
-      document.getElementById('arduinoAdminModal').classList.add('hidden');
-    }
-
-    function renderModalArduinoFleet() {
-      const container = document.getElementById('modalArduinoNodesContainer');
-      if (!container) return;
-      container.innerHTML = '';
-
-      const nodes = getArduinoNodes();
-      nodes.forEach((node, idx) => {
-        const card = document.createElement('div');
-        card.className = 'p-3 rounded-md bg-canvas border border-borderLine space-y-2.5';
-        card.dataset.index = idx;
-        card.innerHTML = `
-          <div class="flex items-center justify-between pb-1.5 border-b border-borderLine/40">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full ${node.status === 'ONLINE' ? 'bg-tealOptimal' : 'bg-inkMuted'}"></span>
-              <input type="text" value="${node.id}" class="modal-node-id bg-elevated border border-borderLine rounded px-2 py-0.5 font-bold text-tealOptimal text-xs focus:outline-none focus:border-tealOptimal w-28 font-mono-tabular" title="Arduino Device Hardware ID">
-              <input type="text" value="${node.name}" class="modal-node-name bg-transparent border-b border-dashed border-borderLine text-inkPrimary text-xs focus:outline-none focus:border-inkPrimary flex-1 font-mono-tabular" placeholder="Location / Role Description">
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-[9px] px-1.5 py-0.5 rounded bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/20 font-mono-tabular">${node.status}</span>
-              ${nodes.length > 1 ? `<button type="button" class="modal-delete-node text-coralCrit hover:text-coralCrit/80 text-xs px-1 cursor-pointer" title="Deregister node from fleet">✕</button>` : ''}
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-3 text-xs font-mono-tabular">
-            <div>
-              <div class="flex justify-between items-center mb-1">
-                <label class="text-inkMuted text-[10px] uppercase">Send Interval:</label>
-                <span class="modal-interval-label font-bold text-tealOptimal">${node.interval.toFixed(1)}s</span>
-              </div>
-              <input type="range" min="0.5" max="15.0" step="0.5" value="${node.interval}" class="modal-node-interval inst-slider w-full cursor-pointer">
-            </div>
-            <div>
-              <div class="flex justify-between items-center mb-1">
-                <label class="text-inkMuted text-[10px] uppercase">Control Strength (Tx):</label>
-                <span class="modal-strength-label font-bold text-iceForecast">${node.strength}</span>
-              </div>
-              <select class="modal-node-strength w-full bg-elevated border border-borderLine rounded px-1.5 py-1 text-iceForecast font-semibold text-xs focus:outline-none focus:border-iceForecast cursor-pointer">
-                <option value="+8 dBm" ${node.strength === '+8 dBm' ? 'selected' : ''}>+8 dBm (Max Boost · ~35m perimeter)</option>
-                <option value="+4 dBm" ${node.strength === '+4 dBm' ? 'selected' : ''}>+4 dBm (High Power · ~20m perimeter)</option>
-                <option value="0 dBm" ${node.strength === '0 dBm' ? 'selected' : ''}>0 dBm (Standard Indoor · ~10m perimeter)</option>
-                <option value="-4 dBm" ${node.strength === '-4 dBm' ? 'selected' : ''}>-4 dBm (Medium Low · ~5m perimeter)</option>
-                <option value="-12 dBm" ${node.strength === '-12 dBm' ? 'selected' : ''}>-12 dBm (Localized Sniffer · ~2m perimeter)</option>
-              </select>
-            </div>
-          </div>
-        `;
-
-        const slider = card.querySelector('.modal-node-interval');
-        const intervalLbl = card.querySelector('.modal-interval-label');
-        slider.addEventListener('input', (e) => {
-          intervalLbl.innerText = `${parseFloat(e.target.value).toFixed(1)}s`;
-          updateModalPreview();
-        });
-
-        const select = card.querySelector('.modal-node-strength');
-        const strengthLbl = card.querySelector('.modal-strength-label');
-        select.addEventListener('change', (e) => {
-          strengthLbl.innerText = e.target.value;
-          updateModalPreview();
-        });
-
-        const idInp = card.querySelector('.modal-node-id');
-        idInp.addEventListener('input', updateModalPreview);
-        const nameInp = card.querySelector('.modal-node-name');
-        nameInp.addEventListener('input', updateModalPreview);
-
-        const delBtn = card.querySelector('.modal-delete-node');
-        if (delBtn) {
-          delBtn.addEventListener('click', () => {
-            const currentNodes = getArduinoNodes();
-            if (currentNodes.length <= 1) return;
-            currentNodes.splice(idx, 1);
-            saveArduinoNodes(currentNodes);
-            if (activeArduinoIndex >= currentNodes.length) activeArduinoIndex = 0;
-            renderModalArduinoFleet();
-            updateModalPreview();
-            syncArduinoUI();
-          });
-        }
-
-        container.appendChild(card);
-      });
-    }
-
-    function collectNodesFromModal() {
-      const container = document.getElementById('modalArduinoNodesContainer');
-      if (!container) return getArduinoNodes();
-      const cards = container.querySelectorAll('[data-index]');
-      const nodes = [];
-      cards.forEach((card, i) => {
-        const id = card.querySelector('.modal-node-id').value.trim() || `uno-q-${i + 1}`;
-        const name = card.querySelector('.modal-node-name').value.trim() || `Node ${i + 1}`;
-        const interval = Math.max(0.5, Math.min(15.0, parseFloat(card.querySelector('.modal-node-interval').value) || 2.4));
-        const strength = card.querySelector('.modal-node-strength').value || '+4 dBm';
-        nodes.push({
-          id,
-          name,
-          interval: +interval.toFixed(1),
-          strength,
-          status: 'ONLINE',
-          packetsSent: 200 + i * 50,
-          role: i === 0 ? 'Core Room Scanner' : 'Perimeter Guard',
-          isPrimary: (i === 0)
-        });
-      });
-      return nodes.length > 0 ? nodes : getArduinoNodes();
-    }
-
-    function updateModalPreview() {
-      const preview = document.getElementById('modalPayloadPreview');
-      if (!preview) return;
-      const nodes = collectNodesFromModal();
-      const payload = {
-        action: "FLEET_RF_RECONFIGURE",
-        timestamp_utc: new Date().toISOString(),
-        gateway_version: "Caelum-BLE-UnoQ-2.4",
-        active_zone_id: STATE.currentRoomId,
-        fleet_size: nodes.length,
-        nodes: nodes.map(n => ({
-          node_id: n.id,
-          descriptor: n.name,
-          rf_tx_power_dbm: parseInt(n.strength, 10),
-          control_strength_label: n.strength,
-          beacon_interval_seconds: n.interval,
-          perimeter_filter_rssi: -65,
-          status: n.status
-        }))
-      };
-      preview.innerText = JSON.stringify(payload, null, 2);
-    }
-
-    function saveArduinoAdminModal() {
-      const updatedNodes = collectNodesFromModal();
-      saveArduinoNodes(updatedNodes);
-      if (activeArduinoIndex >= updatedNodes.length) activeArduinoIndex = 0;
-      syncArduinoUI();
-      closeArduinoAdminModal();
-      const active = getActiveArduinoNode();
-      alert(`Arduino Fleet Configuration Deployed!\n\nHTTP PUT /ingest/config -> 201 Created\nNodes Online: ${updatedNodes.length}\nActive Node: ${active.id} [${active.name}]\nTx Control Strength: ${active.strength}\nSend Interval: ${active.interval.toFixed(1)}s\nPerimeter Filter: RSSI > -65 dBm`);
-    }
-
-    /* =====================================================================
-       6. UI TELEMETRY REFRESH
-       ===================================================================== */
-    function refreshUI() {
-      const qCurrent = getCurrentAirflowQ();
-      const qOpen = getAirflowQ(true);
-      const gTotal = STATE.occupancy * STATE.co2GenPerPerson;
-      const cog = evaluateHarvardCOGfx(STATE.co2);
-
-      const cNext1Min = stepMassBalanceCO2(STATE.co2, STATE.occupancy, STATE.roomVolume, qCurrent, 1.0 / 60.0, STATE.co2GenPerPerson);
-      const ratePpmMin = +(cNext1Min - STATE.co2).toFixed(1);
-
-      // Top KPI 1: CO2
-      const co2Round = Math.round(STATE.co2);
-      document.getElementById('co2ValDisplay').innerText = co2Round.toLocaleString();
-      document.getElementById('co2DeltaDisplay').innerText = `+${Math.max(0, co2Round - 420)} ppm`;
-      const rateSign = ratePpmMin >= 0 ? '+' : '';
-      document.getElementById('co2RateBadge').innerText = `${rateSign}${ratePpmMin} ppm/min`;
-
-      const kpiCo2Card = document.getElementById('kpiCo2Card');
-      const statusBadge = document.getElementById('co2StatusBadge');
-      const headerStateBadge = document.getElementById('headerStateBadge');
-      const rateBadge = document.getElementById('co2RateBadge');
-
-      kpiCo2Card.classList.remove('kpi-accent-teal', 'kpi-accent-amber', 'kpi-accent-coral');
-      if (co2Round < 750) {
-        kpiCo2Card.classList.add('kpi-accent-teal');
-        statusBadge.innerText = 'OPTIMAL AIR';
-        statusBadge.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25';
-        headerStateBadge.innerText = 'STATE: OPTIMAL AIRFLOW';
-        headerStateBadge.className = 'text-tealOptimal font-medium';
-        rateBadge.className = 'ml-auto text-xs font-mono-tabular text-tealOptimal';
-      } else if (co2Round < 1350) {
-        kpiCo2Card.classList.add('kpi-accent-amber');
-        statusBadge.innerText = 'STAGNANT';
-        statusBadge.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-amberWarn/10 text-amberWarn border border-amberWarn/25';
-        headerStateBadge.innerText = 'STATE: MODERATE STAGNATION';
-        headerStateBadge.className = 'text-amberWarn font-medium';
-        rateBadge.className = 'ml-auto text-xs font-mono-tabular text-amberWarn';
-      } else {
-        kpiCo2Card.classList.add('kpi-accent-coral');
-        statusBadge.innerText = 'HYPERCAPNIC RISK';
-        statusBadge.className = 'text-[10px] font-mono-tabular font-medium px-2 py-0.5 rounded bg-coralCrit/10 text-coralCrit border border-coralCrit/25';
-        headerStateBadge.innerText = 'STATE: CRITICAL CO₂ CEILING';
-        headerStateBadge.className = 'text-coralCrit font-medium';
-        rateBadge.className = 'ml-auto text-xs font-mono-tabular text-coralCrit';
-      }
-
-      // Top KPI 2: Harvard Cognitive Performance Index
-      document.getElementById('cpiValDisplay').innerText = `${cog.overall.toFixed(1)}%`;
-      const stratDrop = 100 - cog.strategic;
-      document.getElementById('stratDeficitDisplay').innerText = `Strategic: -${stratDrop}%`;
-      const hourlyDrag = (STATE.occupancy * 45.0 * (stratDrop / 100.0)).toFixed(2);
-      document.getElementById('payrollLossDisplay').innerText = `-£${hourlyDrag} / hr`;
-      document.getElementById('cogCeilingPill').innerText = `${cog.overall.toFixed(1)}% CEILING`;
-
-      // Top KPI 3: BLE Occupancy
-      document.getElementById('bleCountDisplay').innerText = STATE.occupancy;
-      document.getElementById('calCountDisplay').innerText = `${STATE.scheduledCount} Booked`;
-      const ghostPct = STATE.scheduledCount > 0
-        ? Math.round((Math.abs(STATE.scheduledCount - STATE.occupancy) / STATE.scheduledCount) * 100)
-        : 0;
-      document.getElementById('ghostBadge').innerText = `${ghostPct}% GHOST DIV`;
-      document.getElementById('respLoadDisplay').innerText = `${gTotal.toFixed(1)} L/h`;
-
-      // Top KPI 4: Ventilation Actuation
-      document.getElementById('qOpenCardDisplay').innerText = `${Math.round(qOpen)} m³/h`;
-
-      // Pipeline Sub-header Strip
-      document.getElementById('stripHumans').innerText = `${STATE.occupancy} Active Mobile Devices (>-65 dBm)`;
-      document.getElementById('stripVol').innerText = STATE.roomVolume;
-      document.getElementById('stripAirflow').innerText = qCurrent.toFixed(1);
-      document.getElementById('stripGen').innerText = gTotal.toFixed(0);
-
-      // Physics Equation Footer Readouts
-      document.getElementById('currentGDisplay').innerText = `${gTotal.toFixed(1)} L/h`;
-      document.getElementById('currentQDisplay').innerText = `${qCurrent.toFixed(1)} m³/h`;
-
-      // Cognitive Progress Bars
-      document.getElementById('domainRoutine').innerText = `${cog.routine}%`;
-      document.getElementById('barRoutine').style.width = `${cog.routine}%`;
-
-      document.getElementById('domainFocused').innerText = `${cog.focused}%`;
-      document.getElementById('barFocused').style.width = `${cog.focused}%`;
-
-      document.getElementById('domainInfo').innerText = `${cog.info}%`;
-      document.getElementById('barInfo').style.width = `${cog.info}%`;
-
-      document.getElementById('domainCrisis').innerText = `${cog.crisis}%`;
-      document.getElementById('barCrisis').style.width = `${cog.crisis}%`;
-
-      document.getElementById('domainStrategic').innerText = `${cog.strategic}%`;
-      document.getElementById('barStrategic').style.width = `${cog.strategic}%`;
-
-      document.getElementById('latencyPenalty').innerText = `${cog.reactionPenalty}% speed penalty`;
-
-      // Spatial Gradient label
-      const gradDelta = STATE.isWindowOpen ? 35 : Math.round((co2Round - 420) * 0.22);
-      document.getElementById('spatialGradText').innerText = `+${gradDelta} ppm Core vs Perimeter`;
-
-      // Recompute Multi-Horizon Charts
-      if (co2Chart && occChart) {
-        const updated = buildForecastArrays();
-        co2Chart.data.datasets[0].data = updated.pastSeries;
-        co2Chart.data.datasets[1].data = updated.groundTruthSeries;
-        co2Chart.data.datasets[2].data = updated.forecastSeries;
-        co2Chart.data.datasets[3].data = updated.optimalSeries;
-        co2Chart.data.datasets[4].data = updated.upperSeries;
-        co2Chart.data.datasets[5].data = updated.lowerSeries;
-        co2Chart.update('none');
-
-        occChart.data.datasets[1].data[8] = STATE.occupancy;
-        occChart.data.datasets[1].data[9] = STATE.occupancy;
-        occChart.update('none');
-      }
-
-      updateTimerDisplayUI();
-    }
-
-    /* =====================================================================
-       7. ROOM PRESETS & ZONE ONBOARDING MODAL CONTROLLER
-       ===================================================================== */
-    function saveCurrentRoomChangesIfCustom() {
-      const customs = getCustomRooms();
-      const idx = customs.findIndex(r => r.id === STATE.currentRoomId);
-      if (idx !== -1) {
-        customs[idx].volume = STATE.roomVolume;
-        customs[idx].occupancy = STATE.occupancy;
-        customs[idx].scheduledCount = STATE.scheduledCount;
-        customs[idx].windows = JSON.parse(JSON.stringify(STATE.windows));
-        saveCustomRooms(customs);
-      }
-    }
-
-    function populateRoomSelector(selectId) {
-      const select = document.getElementById('roomSelector');
-      if (!select) return;
-      select.innerHTML = '';
-
-      const defGroup = document.createElement('optgroup');
-      defGroup.label = 'Default Campus Zones';
-      DEFAULT_ROOMS.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r.id;
-        opt.innerText = `${r.name} (${r.volume} m³ · ${r.windows.length} Win)`;
-        defGroup.appendChild(opt);
-      });
-      select.appendChild(defGroup);
-
-      const customs = getCustomRooms();
-      if (customs.length > 0) {
-        const custGroup = document.createElement('optgroup');
-        custGroup.label = 'Custom Configured Zones';
-        customs.forEach(r => {
-          const opt = document.createElement('option');
-          opt.value = r.id;
-          opt.innerText = `${r.name} (${r.volume} m³ · ${r.windows.length} Win) [Custom]`;
-          custGroup.appendChild(opt);
-        });
-        select.appendChild(custGroup);
-      }
-
-      if (selectId) select.value = selectId;
-      updateDeleteRoomBtnVisibility();
-    }
-
-    function updateDeleteRoomBtnVisibility() {
-      const delBtn = document.getElementById('deleteRoomBtn');
-      if (!delBtn) return;
-      const customs = getCustomRooms();
-      const isCustom = customs.some(r => r.id === STATE.currentRoomId);
-      if (isCustom) {
-        delBtn.classList.remove('hidden');
-        delBtn.classList.add('flex');
-      } else {
-        delBtn.classList.remove('flex');
-        delBtn.classList.add('hidden');
-      }
-    }
-
-    function switchRoom(roomId) {
-      const all = getAllRooms();
-      const room = all.find(r => r.id === roomId) || all[0];
-      if (!room) return;
-
-      stopFlushTimer();
-
-      STATE.currentRoomId = room.id;
-      STATE.roomVolume = room.volume;
-      STATE.occupancy = room.occupancy;
-      STATE.scheduledCount = room.scheduledCount || Math.round(room.occupancy * 1.3);
-      STATE.co2 = room.co2 || 1200.0;
-      STATE.windows = room.windows.map((w, i) => ({
-        id: w.id || i + 1,
-        name: w.name || `Win 0${i + 1}`,
-        area: w.area || 1.0,
-        isOpen: false
-      }));
-
-      // Update UI slider values
-      const volSlider = document.getElementById('volSlider');
-      const volValLabel = document.getElementById('volValLabel');
-      const occSlider = document.getElementById('occSlider');
-      const occValLabel = document.getElementById('occValLabel');
-      const calCount = document.getElementById('calCountDisplay');
-
-      if (volSlider) volSlider.value = STATE.roomVolume;
-      if (volValLabel) volValLabel.innerText = `${STATE.roomVolume} m³`;
-      if (occSlider) occSlider.value = STATE.occupancy;
-      if (occValLabel) occValLabel.innerText = `${STATE.occupancy} Humans`;
-      if (calCount) calCount.innerText = `${STATE.scheduledCount} Booked`;
-
-      updateDeleteRoomBtnVisibility();
-      updateWindowControlsUI();
-      refreshUI();
-    }
-
-    /* Zone Onboarding Modal Window Inputs */
-    let modalWindowCount = 2;
-    function renderModalWindows() {
-      const container = document.getElementById('modalWindowsContainer');
-      const label = document.getElementById('modalWinCountLabel');
-      if (label) label.innerText = modalWindowCount;
-      if (!container) return;
-
-      const existing = [];
-      const currentInputs = container.querySelectorAll('.modal-win-area-input');
-      currentInputs.forEach(inp => existing.push(parseFloat(inp.value) || 1.0));
-
-      container.innerHTML = '';
-      for (let i = 0; i < modalWindowCount; i++) {
-        const defaultArea = existing[i] !== undefined ? existing[i] : (i === 0 ? 1.2 : 1.0);
-        const row = document.createElement('div');
-        row.className = 'flex items-center justify-between gap-3 p-2 rounded bg-canvas border border-borderLine';
-        row.innerHTML = `
-          <div class="flex items-center gap-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-tealOptimal"></span>
-            <span class="text-xs font-mono-tabular text-inkPrimary font-medium">Window 0${i + 1}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <label class="text-[10px] text-inkMuted uppercase">Aperture Area:</label>
-            <input type="number" min="0.2" max="4.0" step="0.1" value="${defaultArea.toFixed(1)}" class="modal-win-area-input w-20 bg-elevated border border-borderLine rounded px-2 py-1 text-tealOptimal font-bold text-xs text-right focus:outline-none focus:border-tealOptimal">
-            <span class="text-xs text-inkMuted">m²</span>
-          </div>
-        `;
-        container.appendChild(row);
-      }
-    }
-
-    function openAddRoomModal() {
-      modalWindowCount = 2;
-      document.getElementById('newRoomName').value = '';
-      document.getElementById('newRoomVol').value = 85;
-      document.getElementById('newRoomOcc').value = 6;
-      document.getElementById('newRoomSched').value = 8;
-      document.getElementById('newRoomCo2').value = 1150;
-      renderModalWindows();
-      document.getElementById('addRoomModal').classList.remove('hidden');
-      setTimeout(() => document.getElementById('newRoomName').focus(), 50);
-    }
-
-    function closeAddRoomModal() {
-      document.getElementById('addRoomModal').classList.add('hidden');
-    }
-
-    function saveNewCustomRoom() {
-      const nameInput = document.getElementById('newRoomName');
-      const nameVal = nameInput.value.trim() || `Custom Lab Zone ${Date.now().toString().slice(-4)}`;
-      const volVal = parseFloat(document.getElementById('newRoomVol').value) || 75.0;
-      const occVal = parseInt(document.getElementById('newRoomOcc').value, 10) || 6;
-      const schedVal = parseInt(document.getElementById('newRoomSched').value, 10) || 8;
-      const co2Val = parseFloat(document.getElementById('newRoomCo2').value) || 1100.0;
-
-      const areaInputs = document.querySelectorAll('.modal-win-area-input');
-      const windows = [];
-      areaInputs.forEach((inp, idx) => {
-        const area = Math.max(0.2, Math.min(4.0, parseFloat(inp.value) || 1.0));
-        windows.push({
-          id: idx + 1,
-          name: `Window 0${idx + 1}`,
-          area: +area.toFixed(1),
-          isOpen: false
-        });
-      });
-
-      if (windows.length === 0) {
-        windows.push({ id: 1, name: 'Window 01', area: 1.0, isOpen: false });
-      }
-
-      const newRoom = {
-        id: `custom_${Date.now()}`,
-        name: nameVal,
-        volume: volVal,
-        occupancy: occVal,
-        scheduledCount: schedVal,
-        co2: co2Val,
-        windows: windows,
-        isCustom: true
-      };
-
-      const customs = getCustomRooms();
-      customs.push(newRoom);
-      saveCustomRooms(customs);
-
-      closeAddRoomModal();
-      populateRoomSelector(newRoom.id);
-      switchRoom(newRoom.id);
-    }
-
-    function deleteCurrentCustomRoom() {
-      const customs = getCustomRooms();
-      const current = customs.find(r => r.id === STATE.currentRoomId);
-      if (!current) return;
-
-      if (confirm(`Delete custom zone "${current.name}"?`)) {
-        const remaining = customs.filter(r => r.id !== STATE.currentRoomId);
-        saveCustomRooms(remaining);
-        populateRoomSelector('appleton');
-        switchRoom('appleton');
-      }
-    }
-
-    /* =====================================================================
-       8. SIMULATION CLOCK TICKS & 8-HOUR DAY TIME-WARP
-       ===================================================================== */
-    function stepSimulationTick() {
-      const qCurrent = getCurrentAirflowQ();
-      STATE.co2 = stepMassBalanceCO2(
-        STATE.co2,
-        STATE.occupancy,
-        STATE.roomVolume,
-        qCurrent,
-        1.0 / 60.0,
-        STATE.co2GenPerPerson
-      );
-
-      if (!STATE.isWindowOpen && STATE.countdownSeconds > 0) {
-        STATE.countdownSeconds--;
-      } else if (STATE.isWindowOpen) {
-        STATE.countdownSeconds = 360;
-      }
-
-      updateTimerDisplayUI();
-      refreshUI();
-    }
-
-    function toggleTimeWarpSimulation() {
-      const btnText = document.getElementById('timeWarpText');
-      const btnIcon = document.getElementById('timeWarpIcon');
-
-      if (STATE.isTimeWarpRunning) {
-        clearInterval(STATE.warpTimer);
-        STATE.isTimeWarpRunning = false;
-        btnIcon.innerText = '▶';
-        btnText.innerText = 'Resume 8-Hour Day (60x)';
-        return;
-      }
-
-      STATE.isTimeWarpRunning = true;
-      btnIcon.innerText = '⏸';
-      btnText.innerText = 'Pause 8-Hour Simulation';
-
-      if (STATE.simMinutesFrom9AM >= 460) {
-        STATE.simMinutesFrom9AM = 0;
-        STATE.co2 = 460.0;
-      }
-
-      STATE.warpTimer = setInterval(() => {
-        STATE.simMinutesFrom9AM += 5;
-        const totalMins = 9 * 60 + STATE.simMinutesFrom9AM;
-        const hh = Math.floor(totalMins / 60) % 24;
-        const mm = totalMins % 60;
-        document.getElementById('simTimeLabel').innerText =
-          `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`;
-
-        if (hh < 10) { STATE.occupancy = 3; STATE.scheduledCount = 4; }
-        else if (hh >= 10 && hh < 12) { STATE.occupancy = 10; STATE.scheduledCount = 12; }
-        else if (hh >= 12 && hh < 13) { STATE.occupancy = 2; STATE.scheduledCount = 2; }
-        else if (hh >= 13 && hh < 15) { STATE.occupancy = 14; STATE.scheduledCount = 16; }
-        else if (hh >= 15 && hh < 17) { STATE.occupancy = 9; STATE.scheduledCount = 12; }
-        else { STATE.occupancy = 1; STATE.scheduledCount = 0; }
-
-        document.getElementById('occSlider').value = STATE.occupancy;
-        document.getElementById('occValLabel').innerText = `${STATE.occupancy} Humans`;
-
-        const qCurrent = getCurrentAirflowQ();
-        STATE.co2 = stepMassBalanceCO2(
-          STATE.co2,
-          STATE.occupancy,
-          STATE.roomVolume,
-          qCurrent,
-          5.0 / 60.0,
-          STATE.co2GenPerPerson
-        );
-
-        if (STATE.co2 > 1450 && !STATE.isWindowOpen) {
-          setOpenWindowsCount(Math.min(2, STATE.windows.length));
-        } else if (STATE.co2 < 620 && STATE.isWindowOpen) {
-          closeAllWindowsAndStopTimer();
-        }
-
-        pushBlePacketRow();
-        refreshUI();
-
-        if (totalMins >= 17 * 60) {
-          clearInterval(STATE.warpTimer);
-          STATE.isTimeWarpRunning = false;
-          btnIcon.innerText = '▶';
-          btnText.innerText = 'Replay 8-Hour Day (60x)';
-        }
-      }, 130);
-    }
-
-    function resetToBaseline() {
-      if (STATE.warpTimer) clearInterval(STATE.warpTimer);
-      STATE.isTimeWarpRunning = false;
-
-      const all = getAllRooms();
-      const currentRoom = all.find(r => r.id === STATE.currentRoomId) || DEFAULT_ROOMS[0];
-
-      STATE.roomVolume = currentRoom.volume;
-      STATE.occupancy = currentRoom.occupancy;
-      STATE.scheduledCount = currentRoom.scheduledCount || 12;
-      STATE.co2GenPerPerson = 16.0;
-      STATE.co2 = currentRoom.co2 || 1280.0;
-      STATE.countdownSeconds = 372;
-      STATE.simMinutesFrom9AM = 315;
-      STATE.windows = currentRoom.windows.map((w, i) => ({
-        id: w.id || i + 1,
-        name: w.name || `Win 0${i + 1}`,
-        area: w.area || 1.0,
-        isOpen: false
-      }));
-
-      document.getElementById('simTimeLabel').innerText = '14:15:00';
-      document.getElementById('timeWarpIcon').innerText = '▶';
-      document.getElementById('timeWarpText').innerText = 'Run 8-Hour Day Simulation (60x)';
-
-      document.getElementById('volSlider').value = STATE.roomVolume;
-      document.getElementById('volValLabel').innerText = `${STATE.roomVolume} m³`;
-      document.getElementById('occSlider').value = STATE.occupancy;
-      document.getElementById('occValLabel').innerText = `${STATE.occupancy} Humans`;
-      document.getElementById('genSlider').value = 16;
-      document.getElementById('genValLabel').innerText = '16.0 L/h (Sedentary)';
-
-      stopFlushTimer();
-      updateWindowControlsUI();
-      refreshUI();
-    }
-
-    /* =====================================================================
-       9. INITIALIZE LISTENERS ON LOAD
-       ===================================================================== */
-    window.onload = function () {
-      initCharts();
-      resizeCadCanvas();
-      renderCadTopology();
-
-      populateRoomSelector(STATE.currentRoomId);
-      updateWindowControlsUI();
-
-      // Synchronize Arduino Multi-Node Fleet & Control Strength
-      syncArduinoUI();
-
-      for (let i = 0; i < 8; i++) pushBlePacketRow();
-
-      setInterval(stepSimulationTick, 2000);
-
-      // Action Buttons
-      document.getElementById('toggleWindowBtn').addEventListener('click', () => {
-        if (STATE.isWindowOpen) {
-          closeAllWindowsAndStopTimer();
+    /* ------------------------------------------------------------------
+       Schedule
+       ------------------------------------------------------------------ */
+    var flashedBuffer = false;
+    function renderSchedule(d) {
+      var now = Caelum.clockMinutesOfDay();
+      $('schedClock').textContent = 'Sim time ' + Caelum.formatClock(now);
+      var list = $('scheduleList');
+      var guided = d.mode === 'guided';
+      var showBuffer = !(guided && d.step < 4);
+      var nextMarked = false;
+      var html = '';
+      var winCount = Math.min(2, STATE.windows.length) || 2;
+
+      Caelum.SCHEDULE.forEach(function (e) {
+        var done = now >= e.end, live = now >= e.start && now < e.end;
+        var time = Caelum.formatClock(e.start) + '–' + Caelum.formatClock(e.end);
+        if (e.type === 'buffer') {
+          if (!showBuffer) return;
+          var tag = done ? 'DONE' : live ? 'FLUSHING' : 'ADDED BY CAELUM';
+          html += '<li class="row buffer' + (done ? ' done' : '') + '" id="bufferRowRoom">' +
+            '<span class="time">' + time + '</span>' +
+            '<span class="title">Fresh-air break · 10 min</span>' +
+            '<span class="meta">Open ' + winCount + ' windows so the next meeting starts with fresh air.</span>' +
+            '<span class="status"><span class="tag flush">' + tag + '</span></span></li>';
         } else {
-          setOpenWindowsCount(Math.min(2, STATE.windows.length));
+          var status = done ? ['DONE', ''] : live ? ['NOW', 'now'] : (!nextMarked ? ['NEXT', 'next'] : ['LATER', '']);
+          if (!done && !live) nextMarked = true;
+          html += '<li class="row' + (done ? ' done' : '') + '">' +
+            '<span class="time">' + time + '</span>' +
+            '<span class="title">' + e.title + '</span>' +
+            '<span class="meta">' + e.scheduled + ' booked · ~' + e.expected + ' expected</span>' +
+            '<span class="status"><span class="tag ' + status[1] + '">' + status[0] + '</span></span></li>';
         }
       });
-
-      document.getElementById('cardFlushBtn').addEventListener('click', () => {
-        if (STATE.isWindowOpen) {
-          closeAllWindowsAndStopTimer();
-        } else {
-          setOpenWindowsCount(Math.min(2, STATE.windows.length));
-        }
-      });
-
-      document.getElementById('weClosedThemBtn').addEventListener('click', closeAllWindowsAndStopTimer);
-      document.getElementById('timeWarpBtn').addEventListener('click', toggleTimeWarpSimulation);
-      document.getElementById('resetSimBtn').addEventListener('click', resetToBaseline);
-      document.getElementById('resetParamsBtn').addEventListener('click', resetToBaseline);
-
-      // Hardware Validation Overlay Checkbox
-      document.getElementById('sensorCheckbox').addEventListener('change', (e) => {
-        STATE.showGroundTruth = e.target.checked;
-        co2Chart.data.datasets[1].hidden = !STATE.showGroundTruth;
-        co2Chart.update();
-      });
-
-      // Physics Sliders
-      document.getElementById('volSlider').addEventListener('input', (e) => {
-        STATE.roomVolume = parseFloat(e.target.value);
-        document.getElementById('volValLabel').innerText = `${STATE.roomVolume} m³`;
-        saveCurrentRoomChangesIfCustom();
-        refreshUI();
-      });
-
-      document.getElementById('occSlider').addEventListener('input', (e) => {
-        STATE.occupancy = parseInt(e.target.value, 10);
-        document.getElementById('occValLabel').innerText = `${STATE.occupancy} Humans`;
-        saveCurrentRoomChangesIfCustom();
-        refreshUI();
-      });
-
-      document.getElementById('genSlider').addEventListener('input', (e) => {
-        STATE.co2GenPerPerson = parseFloat(e.target.value);
-        const mode = STATE.co2GenPerPerson <= 16 ? 'Sedentary' : STATE.co2GenPerPerson <= 20 ? 'Discussion' : 'Active Pitch';
-        document.getElementById('genValLabel').innerText = `${STATE.co2GenPerPerson.toFixed(1)} L/h (${mode})`;
-        refreshUI();
-      });
-
-      document.getElementById('winSlider').addEventListener('input', (e) => {
-        STATE.windowCount = parseInt(e.target.value, 10);
-        saveCurrentRoomChangesIfCustom();
-        updateWindowControlsUI();
-        refreshUI();
-      });
-
-      // Room Selector
-      document.getElementById('roomSelector').addEventListener('change', (e) => {
-        switchRoom(e.target.value);
-      });
-
-      // Admin Functions: Arduino Fleet & Control Strength Listeners
-      const nodeSelector = document.getElementById('arduinoNodeSelector');
-      if (nodeSelector) {
-        nodeSelector.addEventListener('change', (e) => {
-          activeArduinoIndex = parseInt(e.target.value, 10);
-          syncArduinoUI();
-        });
+      if (list.dataset.sig !== html) {
+        list.dataset.sig = html;
+        list.innerHTML = html;
       }
+      var showNew = guided && d.step >= 4;
+      var row = $('bufferRowRoom');
+      if (row && showNew && !flashedBuffer) { flashedBuffer = true; row.classList.add('flash'); }
+      if (!showNew) flashedBuffer = false;
+    }
 
-      const bleSlider = document.getElementById('bleIntervalSlider');
-      if (bleSlider) {
-        bleSlider.addEventListener('input', (e) => {
-          setArduinoNodeInterval(activeArduinoIndex, e.target.value);
-        });
-      }
+    /* ------------------------------------------------------------------
+       Render loop (coalesced to animation frames)
+       ------------------------------------------------------------------ */
+    var queued = false;
+    function schedule() {
+      if (queued) return;
+      queued = true;
+      var run = function () { queued = false; render(); };
+      // rAF is paused for hidden/occluded windows; fall back to a timer so state never goes stale
+      if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(run);
+      else setTimeout(run, 50);
+    }
 
-      const bleStrength = document.getElementById('bleStrengthSelect');
-      if (bleStrength) {
-        bleStrength.addEventListener('change', (e) => {
-          setArduinoNodeStrength(activeArduinoIndex, e.target.value);
-        });
-      }
+    function render() {
+      var band = bandFor(STATE.co2);
+      var demo = currentDemo();
+      renderLink();
+      renderRooms();
+      renderDemo(demo);
+      renderHero(band);
+      renderCrowd();
+      renderFocus(band);
+      renderAction(demo);
+      renderForecast();
+      renderSchedule(demo);
+    }
 
-      const deployBleBtn = document.getElementById('deployBleConfigBtn');
-      if (deployBleBtn) {
-        deployBleBtn.addEventListener('click', () => {
-          const active = getActiveArduinoNode();
-          alert(`Arduino Hardware Ingest Configuration Deployed!\n\nTarget Hardware: ${active.id} (${active.name})\nRF Control Strength: ${active.strength}\nBLE Send Interval: ${active.interval.toFixed(1)}s\nPerimeter Filter: RSSI > -65 dBm\n\nDispatched via PUT /ingest/config.`);
-        });
-      }
-
-      // Arduino Fleet Admin Modal Listeners
-      const openArduinoAdminBtn = document.getElementById('openArduinoAdminBtn');
-      if (openArduinoAdminBtn) openArduinoAdminBtn.addEventListener('click', openArduinoAdminModal);
-
-      const quickFleetModalBtn = document.getElementById('quickFleetModalBtn');
-      if (quickFleetModalBtn) quickFleetModalBtn.addEventListener('click', openArduinoAdminModal);
-
-      const closeArduinoAdminModalBtn = document.getElementById('closeArduinoAdminModalBtn');
-      if (closeArduinoAdminModalBtn) closeArduinoAdminModalBtn.addEventListener('click', closeArduinoAdminModal);
-
-      const cancelArduinoAdminModalBtn = document.getElementById('cancelArduinoAdminModalBtn');
-      if (cancelArduinoAdminModalBtn) cancelArduinoAdminModalBtn.addEventListener('click', closeArduinoAdminModal);
-
-      const saveArduinoAdminModalBtn = document.getElementById('saveArduinoAdminModalBtn');
-      if (saveArduinoAdminModalBtn) saveArduinoAdminModalBtn.addEventListener('click', saveArduinoAdminModal);
-
-      const modalAddArduinoNodeBtn = document.getElementById('modalAddArduinoNodeBtn');
-      if (modalAddArduinoNodeBtn) {
-        modalAddArduinoNodeBtn.addEventListener('click', () => {
-          const nodes = getArduinoNodes();
-          const nextNum = nodes.length + 1;
-          nodes.push({
-            id: `uno-q-${nextNum}`,
-            name: `Zone Sensor 0${nextNum}`,
-            interval: 3.0,
-            strength: '+4 dBm',
-            status: 'ONLINE',
-            packetsSent: 0,
-            role: 'Auxiliary Zone Ingest',
-            isPrimary: false
-          });
-          saveArduinoNodes(nodes);
-          renderModalArduinoFleet();
-          updateModalPreview();
-          syncArduinoUI();
-        });
-      }
-
-      // Add Room Modal Listeners
-      document.getElementById('addRoomBtn').addEventListener('click', openAddRoomModal);
-      document.getElementById('closeAddRoomModalBtn').addEventListener('click', closeAddRoomModal);
-      document.getElementById('cancelAddRoomBtn').addEventListener('click', closeAddRoomModal);
-      document.getElementById('saveAddRoomBtn').addEventListener('click', saveNewCustomRoom);
-      document.getElementById('deleteRoomBtn').addEventListener('click', deleteCurrentCustomRoom);
-
-      document.getElementById('modalDecWinBtn').addEventListener('click', () => {
-        if (modalWindowCount > 1) {
-          modalWindowCount--;
-          renderModalWindows();
-        }
-      });
-
-      document.getElementById('modalIncWinBtn').addEventListener('click', () => {
-        if (modalWindowCount < 8) {
-          modalWindowCount++;
-          renderModalWindows();
-        }
-      });
-
-      window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closeAddRoomModal();
-          closeArduinoAdminModal();
-        }
-      });
-
-      // Bottom-Right View Switcher Tabs
-      const calPane = document.getElementById('calendarPane');
-      const blePane = document.getElementById('bleLogPane');
-      const btnSplit = document.getElementById('tabBtnSplit');
-      const btnCal = document.getElementById('tabBtnCal');
-      const btnBle = document.getElementById('tabBtnBle');
-
-      function setBottomTab(mode) {
-        [btnSplit, btnCal, btnBle].forEach(b => {
-          b.className = 'px-2.5 py-1 rounded-sm text-inkSecondary hover:text-inkPrimary transition cursor-pointer';
-        });
-        if (mode === 'split') {
-          btnSplit.className = 'px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition cursor-pointer';
-          calPane.className = 'md:col-span-7 space-y-2 font-mono-tabular text-xs';
-          blePane.className = 'md:col-span-5 flex flex-col justify-between inst-well overflow-hidden';
-        } else if (mode === 'cal') {
-          btnCal.className = 'px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition cursor-pointer';
-          calPane.className = 'md:col-span-12 space-y-2 font-mono-tabular text-xs';
-          blePane.className = 'hidden';
-        } else {
-          btnBle.className = 'px-2.5 py-1 rounded-sm bg-elevated text-inkPrimary font-medium transition cursor-pointer';
-          calPane.className = 'hidden';
-          blePane.className = 'md:col-span-12 flex flex-col justify-between inst-well overflow-hidden';
-        }
-      }
-
-      btnSplit.addEventListener('click', () => setBottomTab('split'));
-      btnCal.addEventListener('click', () => setBottomTab('cal'));
-      btnBle.addEventListener('click', () => setBottomTab('ble'));
-
-      window.addEventListener('resize', resizeCadCanvas);
-      refreshUI();
-    };
+    /* ------------------------------------------------------------------
+       Boot
+       ------------------------------------------------------------------ */
+    $('actionBtn').addEventListener('click', onActionClick);
+    $('roomSelectMobile').addEventListener('change', function (e) { Caelum.requestSwitchRoom(e.target.value); });
+    initChart();
+    Caelum.subscribe(schedule);
+    Caelum.init({ role: 'room' });   // follows the admin; runs standalone after ~3 s if none is found
+    schedule();
+  })();
   </script>
   <!-- Backend connection (rooms, live occupancy, CO2 forecast). Keep this after the page's own scripts. -->
   <script src="backend.js"></script>

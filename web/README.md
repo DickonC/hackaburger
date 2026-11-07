@@ -2,9 +2,9 @@
 
 Serves the frontend at `https://hackaburger.cch-uk.tech/`.
 
-The host nginx proxies `/` to the container `hackaburger-web` on `127.0.0.1:8095` and `/ingest/` to the backend. The container serves only `web/public/`, which `./publish` fills with copies of `index.html` and `backend.js`. The rest of the repo, including `.env`, is never served.
+The host nginx proxies `/` to the container `hackaburger-web` on `127.0.0.1:8095` and `/ingest/` to the backend. The container serves only `web/public/`, which `./publish` fills with copies of `index.html`, `admin.html`, `backend.js`, and `js/engine.js`. The rest of the repo, including `.env`, is never served.
 
-To update the live page after changing `index.html` or `backend.js`:
+To update the live page after changing the frontend:
 
 ```bash
 cd ~/hackaburger && git pull && web/publish

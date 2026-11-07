@@ -6,6 +6,9 @@ services:
     container_name: hackaburger-ingest
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Training (python -m app.dataset) shares this server with other sites: cap its CPU threads
+      - OMP_NUM_THREADS=2
     volumes:
       - ./data:/data
     ports:

@@ -1,29 +1,44 @@
 #!/usr/bin/env bash
 # Control the BLE occupancy scanner on the UNO Q.
 #
-#   ./scanner.sh start [scan.py options]   start in the background (default: --display -v)
+#   ./scanner.sh start [scan.py options]   start in the background (no options: saved ones, see autostart)
 #   ./scanner.sh stop                      stop it
 #   ./scanner.sh restart [options]         stop, then start
 #   ./scanner.sh status                    is it running? + last report
 #   ./scanner.sh log                       follow the live output (Ctrl+C to leave; scanner keeps running)
 #   ./scanner.sh run [options]             run in the foreground (Ctrl+C stops it)
-#   ./scanner.sh autostart on|off          start automatically at boot
+#   ./scanner.sh autostart on [options]    start automatically at boot with these options
+#                                          (also used by a plain './scanner.sh start')
+#   ./scanner.sh autostart off             no autostart (saved options are kept)
+#   ./scanner.sh ensure                    start with saved options if not running (used by the watchdog)
 #
 # Options are passed to scan.py, e.g.: ./scanner.sh start --display --threshold -65
+# If .env exists, --send is added automatically; add --local to run without sending.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PY="$DIR/.venv/bin/python"
 PIDFILE="$DIR/scanner.pid"
 LOGFILE="$DIR/scanner.log"
-DEFAULT_ARGS=(--display -v)
+ARGSFILE="$DIR/start.args"   # options saved by 'autostart on', one per line
+DEFAULT_ARGS=(--display)
+if [[ -f "$ARGSFILE" ]]; then
+  DEFAULT_ARGS=(); while IFS= read -r a; do [[ -n "$a" ]] && DEFAULT_ARGS+=("$a"); done <"$ARGSFILE"
+fi
 
 is_running() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
 
 start() {
   if is_running; then echo "Already running (pid $(cat "$PIDFILE"))."; return; fi
   local args=("$@"); [[ ${#args[@]} -eq 0 ]] && args=("${DEFAULT_ARGS[@]}")
+  # Send to the server whenever .env exists, unless --local is given.
+  if [[ " ${args[*]} " == *" --local "* ]]; then
+    local kept=(); for a in "${args[@]}"; do [[ "$a" != "--local" ]] && kept+=("$a"); done; args=("${kept[@]}")
+  elif [[ -f "$DIR/.env" && " ${args[*]} " != *" --send "* ]]; then
+    args+=(--send)
+  fi
   cd "$DIR" || exit 1
+  [[ -f "$LOGFILE" ]] && mv -f "$LOGFILE" "$LOGFILE.1"   # keep the previous run's log
   nohup "$PY" -u scan.py "${args[@]}" >"$LOGFILE" 2>&1 &
   echo $! >"$PIDFILE"
   sleep 1
@@ -44,17 +59,23 @@ status() {
   if is_running; then
     echo "Running (pid $(cat "$PIDFILE")): $(tr '\0' ' ' </proc/"$(cat "$PIDFILE")"/cmdline)"
     grep "in range" "$LOGFILE" | tail -n 1
+    grep "\[server\]" "$LOGFILE" | tail -n 1
   else echo "Not running."; fi
 }
 
 autostart() {
-  local line="@reboot sleep 20 && $DIR/scanner.sh start"
-  case "${1:-}" in
-    on)  (crontab -l 2>/dev/null | grep -v "scanner.sh start"; echo "$line") | crontab -
-         echo "Autostart on (default options, starts ~20 s after boot)." ;;
-    off) crontab -l 2>/dev/null | grep -v "scanner.sh start" | crontab -
+  # @reboot starts it after power-on; the every-minute watchdog restarts it if it
+  # ever stops (e.g. Bluetooth not ready yet at boot, or a crash).
+  local line="@reboot sleep 20 && $DIR/scanner.sh start
+* * * * * $DIR/scanner.sh ensure >/dev/null 2>&1"
+  local mode="${1:-}"; shift || true
+  case "$mode" in
+    on)  if [[ $# -gt 0 ]]; then printf '%s\n' "$@" >"$ARGSFILE"; fi
+         (crontab -l 2>/dev/null | grep -v "scanner.sh"; echo "$line") | crontab -
+         echo "Autostart on (~20 s after boot, watchdog every minute) with: $(tr '\n' ' ' <"$ARGSFILE" 2>/dev/null || echo "${DEFAULT_ARGS[*]}")" ;;
+    off) crontab -l 2>/dev/null | grep -v "scanner.sh" | crontab -
          echo "Autostart off." ;;
-    *)   echo "usage: $0 autostart on|off"; exit 1 ;;
+    *)   echo "usage: $0 autostart on [options] | off"; exit 1 ;;
   esac
 }
 
@@ -67,5 +88,6 @@ case "$cmd" in
   log)       tail -n 30 -f "$LOGFILE" ;;
   run)       cd "$DIR" && exec "$PY" -u scan.py "$@" ;;
   autostart) autostart "$@" ;;
-  *)         sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  ensure)    is_running || start ;;
+  *)         sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

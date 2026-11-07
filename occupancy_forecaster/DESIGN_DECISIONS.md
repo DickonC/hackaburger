@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Build a **small quantitative research system**, not a replica of a proprietary trading platform. The methodology is familiar in quantitative forecasting: noisy time series, explicit reference models, carefully specified targets, separate model-selection and scoring periods, honest uncertainty measurements, and logging predictions **before** outcomes are observed. The synthetic demonstration is for verifying software, *not evidence of real-world predictive performance*.
+Build a **small quantitative research system**, not a replica of a proprietary trading platform. The methodology is familiar in quantitative forecasting: noisy time series, explicit reference models, carefully specified targets, separate model-selection and scoring periods, honest uncertainty measurements, and logging predictions **before** outcomes are observed. The models are trained and backtested on the real Aalborg office dataset (doi:10.5281/zenodo.10673763); synthetic data is only used inside the unit tests.
 
 ## Model choices and rationale
 
@@ -85,7 +85,7 @@ This is a **deliberate, defensible multi-timescale design**:
 
 ### Current research limitations
 
-- The sample data follow an intentionally predictable synthetic weekly office rhythm. Forecasting a genuine unknown next day remains unvalidated.
+- The training data are six small Danish offices in 2023, with camera-count gaps of whole days or weeks. The backend forecasts only these rooms; our own boards would need a few weeks of readings before the same training applies to our rooms.
 - With no Bluetooth observations, the 24-hour projection is a **scenario assumption**. There is no honest measured error or live accuracy number to report.
 - The long-horizon reference band is calibrated on past points (not conditional on forecast horizon) and should be described as *indicative*. Review its coverage after real observations arrive.
 - Opening a window should not be controlled from these occupancy assumptions alone. The later CO₂ prediction task needs actual ventilation and room parameters and preferably a CO₂ sensor.

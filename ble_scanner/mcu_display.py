@@ -1,7 +1,8 @@
 """Send the device count to the UNO Q microcontroller's LED matrix.
 
 Talks MessagePack-RPC to the arduino-router over its Unix socket, calling the
-"show_count" method that arduino/count_display/count_display.ino provides.
+"show_status" (count, board number) or "show_count" (count only) method that
+arduino/count_display/count_display.ino provides.
 Failures are reported but never stop the scanner.
 """
 
@@ -20,13 +21,18 @@ class McuDisplay:
         self.timeout = timeout
         self._ids = itertools.count(1)
 
-    def show_count(self, n: int) -> bool:
+    def show_count(self, n: int, board: int | None = None) -> bool:
+        """Show `n`; with `board`, also draw that many dots in the top-left corner."""
+        if board:
+            method, params = "show_status", [int(n), int(board)]
+        else:
+            method, params = "show_count", [int(n)]
         msgid = next(self._ids)
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
                 s.settimeout(self.timeout)
                 s.connect(self.path)
-                s.sendall(msgpack.packb([REQUEST, msgid, "show_count", [int(n)]]))
+                s.sendall(msgpack.packb([REQUEST, msgid, method, params]))
                 unpacker = msgpack.Unpacker(raw=False)
                 while True:
                     data = s.recv(4096)

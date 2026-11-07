@@ -12,8 +12,12 @@ Hackathon project for Saturday.
 | [`arduino/`](arduino/) | Microcontroller sketch for the LED matrix |
 | [`index.html`](index.html), [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) | Frontend prototype and design system |
 | [`arduino-ingest/`](arduino-ingest/) | Backend: board data, people count, rooms, CO₂ estimate, forecast API. Live at `https://hackaburger.cch-uk.tech/ingest/` |
-| [`occupancy_forecaster/`](occupancy_forecaster/) | People forecasting model (used by the backend) |
+| [`occupancy_forecaster/`](occupancy_forecaster/) | People forecasting models, trained on the Aalborg office dataset (used by the backend) |
 | [`docs/`](docs/) | Board ↔ server format ([`server-api.md`](docs/server-api.md)), rooms/CO₂/forecast API and frontend wiring ([`backend-api.md`](docs/backend-api.md)) |
+
+## Data credit
+
+Historic occupancy and CO₂ come from Aalborg University, *A Danish high-resolution dataset for six office rooms with occupancy, indoor environment, heating, ventilation, lighting and room control monitoring*, Zenodo, [doi:10.5281/zenodo.10673763](https://doi.org/10.5281/zenodo.10673763), licensed CC BY 4.0. The data isn't stored in this repo; it's downloaded by `occupancy_forecaster/run.py aalborg` or the backend's `python -m app.dataset`.
 
 ## Team
 

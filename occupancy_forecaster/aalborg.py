@@ -62,6 +62,7 @@ def _digest(path: Path, algo: str) -> str:
 
 def load_wide(path: str | Path) -> pd.DataFrame:
     df = pd.read_csv(path, sep=';', encoding='utf-8-sig', index_col=0)
+    df = df.dropna(subset=['timestamp'])  # the file has a few completely empty rows
     df.index = pd.to_datetime(df['timestamp'], utc=True).dt.tz_convert(TIMEZONE)
     return df.drop(columns='timestamp')
 

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Live room count table. Usage: hackaburger [-n ROWS] [-i SECONDS]
+DIR="$(dirname "$(readlink -f "$0")")"
+exec docker exec -it hackaburger-ingest python -c "$(cat "$DIR/live.py")" "$@"

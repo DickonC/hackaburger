@@ -27,3 +27,6 @@ out/
 coverage/
 *.log
 npm-debug.log*
+
+# Server data (SQLite database)
+arduino-ingest/data/

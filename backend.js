@@ -7,7 +7,7 @@
    - Occupancy + CO2 + forecast come from the server for rooms with data
      (a live board or history); other rooms keep the simulation
    - Window toggles are saved with PUT /rooms/{id}/windows
-   - "Deploy Config" sends the range threshold + interval to the board
+   - "Save scanner" sends the interval + range to all heatmap boards at once
    - The BLE packet log shows the board's real (anonymised) devices
 
    API key, without a prompt: open the site once as ?key=<API key> (saved in this browser, then
@@ -718,6 +718,19 @@
     const syncUI = window.syncArduinoUI || (typeof syncArduinoUI === 'function' ? syncArduinoUI : null);
     if (!getNodes) return;
     const nodes = getNodes();
+    // List every heatmap board (the page only knows uno-q-1 and uno-q-2 by default)
+    try {
+      const hm = await api('/heatmap/config');
+      Object.keys(hm.boards || {}).forEach((id, i) => {
+        if (!nodes.some(n => n.id === id)) {
+          nodes.push({ id, name: `Corner board ${i + 1}`, interval: 10, strength: '-75 dBm', status: 'OFFLINE',
+                       packetsSent: 0, role: 'Heatmap corner board', isPrimary: false });
+        }
+      });
+    } catch (e) { console.warn('heatmap boards', e); }
+    // Boards measure at most once a second
+    const slider = document.getElementById('bleIntervalSlider');
+    if (slider) { slider.min = '1'; slider.step = '1'; }
     await Promise.all(nodes.map(async n => {
       try {
         const cfg = await api(`/config/${encodeURIComponent(n.id)}`);
@@ -744,16 +757,55 @@
       const node = getNode();
       if (!node) return;
       const threshold = parseInt(node.strength, 10);
-      const body = { interval_s: Math.max(1, Math.min(60, Number(node.interval) || 5)) };
+      const body = { interval_s: Math.max(1, Math.min(60, Math.round(Number(node.interval) || 10))) };
       if (Number.isInteger(threshold) && threshold >= -100 && threshold <= -30) body.threshold_dbm = threshold;
       try {
-        const cfg = await api(`/config/${encodeURIComponent(node.id)}`, { method: 'PUT', body });
-        live.configs[node.id] = cfg;
-        showToast(`Sent to ${node.id}: range ${cfg.threshold_dbm} dBm, every ${cfg.interval_s}s (config v${cfg.config_version}). The board applies it on its next message.`);
+        // All heatmap boards together: they must measure at the same moments
+        const res = await api('/heatmap/boards', { method: 'PUT', body });
+        const ids = Object.keys(res.boards);
+        ids.forEach(id => { live.configs[id] = res.boards[id]; });
+        const getNodes = window.getArduinoNodes || (typeof getArduinoNodes === 'function' ? getArduinoNodes : null);
+        const saveNodes = window.saveArduinoNodes || (typeof saveArduinoNodes === 'function' ? saveArduinoNodes : null);
+        const syncUI = window.syncArduinoUI || (typeof syncArduinoUI === 'function' ? syncArduinoUI : null);
+        if (getNodes && saveNodes) {
+          const nodes = getNodes();
+          nodes.forEach(n => {
+            if (ids.includes(n.id)) { n.interval = body.interval_s; if (body.threshold_dbm) n.strength = `${body.threshold_dbm} dBm`; }
+          });
+          saveNodes(nodes);
+          if (syncUI) syncUI();
+        }
+        showToast(`Sent to all ${ids.length} boards: measure every ${body.interval_s}s` +
+                  (body.threshold_dbm ? `, range ${body.threshold_dbm} dBm` : '') + '. Waiting for the boards to apply it…');
+        watchApplied(ids.length);
       } catch (e) {
-        showError(`Deploy failed: ${e.message}`);
+        showError(`Save failed: ${e.message}`);
       }
     });
+  }
+
+  // After a save, follow the boards' reported config version until all have applied it (or 2 min pass)
+  let watchTimer = null;
+  function watchApplied(total) {
+    clearInterval(watchTimer);
+    const started = Date.now();
+    watchTimer = setInterval(async () => {
+      try {
+        const hm = await api('/heatmap/latest');
+        const boards = Object.values(hm.boards);
+        const applied = boards.filter(b => !b.config.pending).length;
+        if (applied === boards.length) {
+          clearInterval(watchTimer);
+          showToast(`Applied on all ${boards.length} boards.`);
+        } else if (Date.now() - started > 120000) {
+          clearInterval(watchTimer);
+          const waiting = Object.entries(hm.boards).filter(([, b]) => b.config.pending).map(([id]) => id);
+          showError(`Applied on ${applied}/${boards.length} boards. Still waiting for ${waiting.join(', ')} (offline?).`);
+        } else {
+          showToast(`Applied on ${applied}/${boards.length} boards…`);
+        }
+      } catch (e) { /* keep waiting */ }
+    }, 4000);
   }
 
   // Packet log: show the board's real anonymised devices when it has sent some

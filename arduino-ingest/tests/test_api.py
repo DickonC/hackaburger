@@ -52,7 +52,7 @@ def test_initial_configs(client):
     assert (c1["threshold_dbm"], c1["window_s"], c1["interval_s"]) == (-75, 30, 5)
     assert (c2["threshold_dbm"], c2["window_s"], c2["interval_s"]) == (-75, 30, 5)  # heatmap boards share timing
     assert c3 == {"config_version": 1, "enabled": True, "threshold_dbm": -75, "window_s": 30,
-                  "interval_s": 5, "people_factor": 0.7, "send_devices": True, "display": True, "send_every_s": 300}
+                  "interval_s": 5, "people_factor": 0.7, "send_devices": True, "display": True, "send_every_s": 0}  # live by default
 
 
 def test_worked_example_and_recount(client):

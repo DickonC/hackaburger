@@ -19,12 +19,12 @@ DEFAULT_CONFIG = {
     "people_factor": 0.7,
     "send_devices": True,
     "display": True,
-    "send_every_s": 300,  # POST on clock boundaries every N s; 0 = every interval_s (live)
+    "send_every_s": 0,  # POST every interval_s (live); N > 0 = every N s on clock boundaries
 }
 PRESETS = {
-    "room": {"threshold_dbm": -75, "window_s": 30, "interval_s": 5, "send_every_s": 300},
+    "room": {"threshold_dbm": -75, "window_s": 30, "interval_s": 5, "send_every_s": 0},
     "demo": {"threshold_dbm": -40, "window_s": 6, "interval_s": 1, "send_every_s": 0},
-    "venue": {"threshold_dbm": -100, "window_s": 30, "interval_s": 5, "send_every_s": 300},
+    "venue": {"threshold_dbm": -100, "window_s": 30, "interval_s": 5, "send_every_s": 0},
 }
 
 # field -> (types, min, max); bool is checked separately because bool is an int subclass

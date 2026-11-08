@@ -157,6 +157,11 @@ In a busy venue the board hears 300–500 devices, which makes a message of roug
 
 ---
 
+### Settings poll (board → server)
+
+Between POSTs, each board also calls `GET /ingest/config/{device}` (same `X-API-Key` header) every 15 s. It applies the returned config by the same rules as a POST reply. So settings changes reach a board within about 15 s, even when it only sends data every 5 minutes.
+Before its clock is internet-synced after power-on, a board **does not send** (it would have a wrong `ts`). It still polls settings and runs its LED.
+
 ## 3. Webapp ↔ server
 
 These endpoints are for the webapp, not the board. They use the same `X-API-Key` header.

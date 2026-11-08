@@ -211,6 +211,40 @@
     .quiet-metrics .metric:nth-child(-n+2) { border-bottom: 1px solid #E2E8F0; }
     .metric.where { display: flex; flex-direction: column; }
     .where-map { position: relative; flex: 1; min-height: 180px; margin-top: 12px; }
+    /* Full-window map view */
+    .where-expand {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 8px; border-radius: 8px; font-size: 13px;
+      background: #fff; border: 1px solid #E2E8F0; color: #0F172A; cursor: pointer;
+    }
+    .where-expand:hover { border-color: #94A3B8; }
+    .where-full-head { display: none; }
+    .where-close {
+      display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+      padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 500;
+      background: #0F172A; color: #fff; border: 0; cursor: pointer;
+    }
+    .where-close:hover { background: #1E293B; }
+    .where-close kbd {
+      font: 11px 'JetBrains Mono', ui-monospace, monospace; padding: 1px 5px; border-radius: 4px;
+      background: rgba(255, 255, 255, .16); color: #E2E8F0;
+    }
+    .metric.where.map-full {
+      position: fixed; inset: 0; z-index: 70; margin: 0;
+      padding: 18px 24px 22px; overflow: auto;
+      background: var(--bg) !important; border: 0 !important;
+    }
+    .metric.where.map-full .where-full-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #E2E8F0;
+    }
+    .metric.where.map-full .where-map { min-height: 320px; background-color: #fff; }
+    .metric.where.map-full .where-expand { display: none; }
+    body.map-full-open { overflow: hidden; }
+    @media (max-width: 639px) {
+      .metric.where.map-full { padding: 12px 16px 16px; }
+      .where-close kbd { display: none; }
+    }
     #cadTip {
       position: absolute; z-index: 5; max-width: 240px;
       padding: 6px 8px; border-radius: 8px; background: #0F172A; color: #fff;
@@ -428,7 +462,7 @@
       </select>
 
       <div class="flex items-center gap-3 text-sm ml-auto">
-        <span class="font-mono-tabular text-inkPrimary"><span id="simTimeLabel">14:15:00</span></span>
+        <span class="font-mono-tabular text-inkPrimary"><span id="simTimeLabel">--:--:--</span></span>
         <span id="headerStateBadge" class="state-pill">Fresh</span>
       </div>
 
@@ -487,6 +521,7 @@
               <li><kbd>L</kbd> Live mode</li>
               <li><kbd>S</kbd> Play or pause the day</li>
               <li><kbd>W</kbd> Open or close windows</li>
+              <li><kbd>M</kbd> Map full view</li>
               <li><kbd>+</kbd> / <kbd>-</kbd> People up or down</li>
               <li><kbd>R</kbd> Reset</li>
               <li><kbd>Esc</kbd> Exit demo</li>
@@ -611,7 +646,17 @@
         </div>
       </div>
 
-      <div class="metric where">
+      <div class="metric where" id="whereCard" aria-labelledby="whereFullTitle">
+        <div class="where-full-head">
+          <div class="min-w-0">
+            <div id="whereFullTitle" class="text-lg font-semibold text-inkPrimary truncate" style="font-family:'Cabinet Grotesk',sans-serif;letter-spacing:-0.02em">Where people are</div>
+            <div id="whereFullSub" class="text-[13px] text-inkSecondary truncate"></div>
+          </div>
+          <button id="whereCloseBtn" type="button" class="where-close" aria-label="Close full view">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Close <kbd>Esc</kbd>
+          </button>
+        </div>
         <div class="flex items-baseline justify-between gap-2">
           <span class="metric-k">Where people are</span>
           <span id="windowAirflowBadge" class="text-sm text-inkSecondary">Windows closed</span>
@@ -628,9 +673,15 @@
         </div>
         <div id="heatLegend" class="flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-inkSecondary mt-1.5" hidden></div>
         <div class="mt-2 flex items-start justify-between gap-3">
-          <p id="whereCaption" class="text-[13px] text-inkSecondary">Core vs perimeter <strong id="spatialGradText" class="font-medium text-inkPrimary">+190 ppm</strong></p>
-          <button id="heatmapDotsBtn" type="button" hidden aria-pressed="false"
-            class="heat-ctl shrink-0 text-[13px] px-2 py-1 rounded-lg bg-white border border-borderLine text-inkPrimary cursor-pointer">Devices</button>
+          <p id="whereCaption" class="text-[13px] text-inkSecondary">Sample data · <strong id="spatialGradText" class="font-medium text-inkPrimary">simulated</strong></p>
+          <div class="flex shrink-0 items-center gap-1.5">
+            <button id="heatmapDotsBtn" type="button" hidden aria-pressed="false"
+              class="heat-ctl shrink-0 text-[13px] px-2 py-1 rounded-lg bg-white border border-borderLine text-inkPrimary cursor-pointer">Devices</button>
+            <button id="whereExpandBtn" type="button" class="where-expand heat-ctl" title="Fill the window with the map. Shortcut: M" aria-label="Expand the map to fill the window">
+              <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 1.5h4v4M5.5 12.5h-4v-4M12.5 1.5L8 6M1.5 12.5L6 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Expand
+            </button>
+          </div>
         </div>
         <div id="heatmapEdge" hidden class="mt-3">
           <div class="flex items-center justify-between gap-2 text-sm mb-1.5">
@@ -1498,11 +1549,26 @@
       });
     }
 
+    // Demo-day occupancy shown during the 8-hour / guided demos
+    const DEMO_CAL_SCHEDULE = [4, 4, 4, 4, 10, 10, 10, 10, 12, 12, 12, 12, 14, 14, 14, 14, 4, 2];
+    const DEMO_BLE_ACTUAL = [3, 3, 4, 4, 7, 7, 7, 7];
+
     function syncOccupancyChart() {
       if (!occChart) return;
       const predicted = occupancyPredictionSeries();
       const datasets = occChart.data.datasets;
       if (datasets[2]) datasets[2].data = predicted;
+      // Real-time sample room: booked headcount from the calendar, people from the last 2 hours
+      const day = Caelum.daySeries(OCC_OFFSETS_MIN);
+      if (day) {
+        datasets[0].data = day.scheduled;
+        datasets[1].data = day.actual;
+        datasets[0].dayData = true;
+      } else if (datasets[0].dayData) {
+        datasets[0].dayData = false;
+        datasets[0].data = DEMO_CAL_SCHEDULE.slice();
+        datasets[1].data = DEMO_BLE_ACTUAL.slice(0, 8).concat([STATE.occupancy], Array(9).fill(null));
+      }
       const actual = datasets[1] && datasets[1].data;
       if (actual && actual.length > 8) {
         actual[8] = STATE.occupancy;
@@ -1616,8 +1682,8 @@
       });
 
       const ctx2 = document.getElementById('occupancyChart').getContext('2d');
-      const calSchedule = [4, 4, 4, 4, 10, 10, 10, 10, 12, 12, 12, 12, 14, 14, 14, 14, 4, 2];
-      const bleActual = [3, 3, 4, 4, 7, 7, 7, 7, STATE.occupancy].concat(Array(9).fill(null));
+      const calSchedule = DEMO_CAL_SCHEDULE.slice();
+      const bleActual = DEMO_BLE_ACTUAL.slice(0, 8).concat([STATE.occupancy], Array(9).fill(null));
 
       occChart = new Chart(ctx2, {
         type: 'line',
@@ -1702,7 +1768,6 @@
        ===================================================================== */
     const cadCanvas = document.getElementById('cadTopologyCanvas');
     const cadCtx = cadCanvas.getContext('2d');
-    let flowTick = 0;
     let heatSprite = null;
     let heatSpriteKey = '';
     let cadHits = [];
@@ -1814,6 +1879,155 @@
         && d.weakest_dbm != null && d.weakest_dbm >= edgePreview.edge;
     }
 
+    /* Sample heatmap for rooms without the four boards: the same picture as the live
+       map, made from the room's simulated headcount. People sit round the table during
+       a booking and spread out otherwise; each carries 1–2 devices that drift slowly. */
+    const SAMPLE_EXTRA_KINDS = ['computer', 'wearable', 'computer', 'brand_other', 'wearable'];
+    let sampleCache = { key: '', src: null };
+    function hash01(n) {
+      let x = Math.imul((n | 0) ^ 0x9E3779B9, 2654435761) >>> 0;
+      x ^= x >>> 15;
+      x = Math.imul(x, 2246822519) >>> 0;
+      x ^= x >>> 13;
+      return (x >>> 0) / 4294967296;
+    }
+    const clampTo = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    function sampleHeatmap() {
+      const W = STATE.roomWidth || 6;
+      const L = STATE.roomLength || 5;
+      const people = clampTo(Math.round(STATE.occupancy || 0), 0, 40);
+      const meeting = (STATE.scheduledCount || 0) > 0;
+      const bucket = Math.floor(Date.now() / 1500);
+      const key = `${STATE.currentRoomId}|${W}|${L}|${people}|${meeting}|${bucket}`;
+      if (sampleCache.key === key) return sampleCache.src;
+
+      const t = Date.now() / 1000;
+      const seed = [...String(STATE.currentRoomId)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
+      const margin = Math.min(0.7, W * 0.12, L * 0.12);
+      const corners = {
+        'uno-q-1': { corner: 'top_left', x: 0, y: 0 },
+        'uno-q-2': { corner: 'top_right', x: W, y: 0 },
+        'uno-q-3': { corner: 'bottom_right', x: W, y: L },
+        'uno-q-4': { corner: 'bottom_left', x: 0, y: L },
+      };
+      const devices = [];
+      for (let i = 0; i < people; i++) {
+        let x;
+        let y;
+        if (meeting) {
+          const a = (i / Math.max(1, people)) * Math.PI * 2 + 0.4;
+          x = W / 2 + Math.cos(a) * W * 0.3;
+          y = L / 2 + Math.sin(a) * L * 0.27;
+        } else {
+          x = margin + hash01(seed + i * 7) * (W - 2 * margin);
+          y = margin + hash01(seed + i * 13 + 1) * (L - 2 * margin);
+        }
+        x += Math.sin(t / 23 + i * 1.7) * 0.25;
+        y += Math.cos(t / 29 + i * 2.3) * 0.2;
+        const count = hash01(seed + i * 5 + 3) < 0.35 ? 2 : 1;
+        for (let k = 0; k < count; k++) {
+          const kind = k === 0
+            ? (hash01(seed + i * 3) < 0.55 ? 'phone' : 'apple_device')
+            : SAMPLE_EXTRA_KINDS[Math.floor(hash01(seed + i * 11 + k) * SAMPLE_EXTRA_KINDS.length)];
+          const dx = clampTo(x + (k ? 0.3 : 0), 0.1, W - 0.1);
+          const dy = clampTo(y + (k ? 0.15 : 0), 0.1, L - 0.1);
+          const rssi = {};
+          Object.entries(corners).forEach(([id, b]) => {
+            rssi[id] = Math.round(-48 - 24 * Math.log10(1 + Math.hypot(dx - b.x, dy - b.y)));
+          });
+          devices.push({
+            id: `sample${String(i).padStart(2, '0')}${k}`, kind, status: 'in_room', x: dx, y: dy,
+            rssi, weakest_dbm: Math.min(...Object.values(rssi)), boards_heard: 4,
+          });
+        }
+      }
+
+      const cols = 28;
+      const rows = clampTo(Math.round(cols * L / W), 8, 40);
+      const sigma = 0.8;
+      const values = [];
+      let max = 0;
+      for (let r = 0; r < rows; r++) {
+        const row = [];
+        const cy = ((r + 0.5) / rows) * L;
+        for (let c = 0; c < cols; c++) {
+          const cx = ((c + 0.5) / cols) * W;
+          let v = 0;
+          for (const d of devices) {
+            const dd = (d.x - cx) ** 2 + (d.y - cy) ** 2;
+            v += Math.exp(-dd / (2 * sigma * sigma));
+          }
+          row.push(v);
+          if (v > max) max = v;
+        }
+        values.push(row);
+      }
+      const boards = {};
+      Object.entries(corners).forEach(([id, b]) => {
+        boards[id] = { corner: b.corner, x: b.x, y: b.y, online: true, heard: devices.length + 4 + Math.round(hash01(seed + id.length + bucket % 7) * 5) };
+      });
+      const src = {
+        sample: true,
+        people,
+        heatmap: {
+          ts: key, mode: 'live', room: { width_m: W, length_m: L },
+          heatmap: { values, max_value: Math.max(max, 2) },
+          boards, devices_in_room: devices.length,
+        },
+        heatmapDebug: { ts: key, devices },
+      };
+      sampleCache = { key, src };
+      return src;
+    }
+
+    // Windows along the top wall of the sample map (green and angled when open)
+    function drawSampleWindows(box) {
+      const n = Math.min(STATE.windows.length, 6);
+      for (let i = 0; i < n; i++) {
+        const win = STATE.windows[i];
+        const ww = clampTo(box.dw * 0.09 * Math.sqrt(win.area || 1), 14, 64);
+        const wx = box.x + ((i + 1) * box.dw) / (n + 1) - ww / 2;
+        cadCtx.fillStyle = '#F8FAFC';
+        cadCtx.fillRect(wx, box.y - 2, ww, 4);
+        cadCtx.strokeStyle = win.isOpen ? '#15803D' : '#94A3B8';
+        cadCtx.lineWidth = 2;
+        cadCtx.beginPath();
+        cadCtx.moveTo(wx, box.y);
+        cadCtx.lineTo(wx + ww, win.isOpen ? box.y + 8 : box.y);
+        cadCtx.stroke();
+        cadCtx.fillStyle = win.isOpen ? '#15803D' : '#64748B';
+        cadCtx.font = '9px "JetBrains Mono", monospace';
+        cadCtx.textAlign = 'center';
+        cadCtx.textBaseline = 'alphabetic';
+        cadCtx.fillText(`W${i + 1}`, wx + ww / 2, box.y - 6);
+      }
+    }
+
+    function paintSampleCaption(src) {
+      const cap = byId('whereCaption');
+      if (src.waiting) {
+        if (cap.firstChild) cap.firstChild.textContent = 'Live · ';
+        byId('spatialGradText').textContent = 'waiting for the boards';
+        byId('whereDevices').hidden = true;
+        byId('heatLegend').hidden = true;
+        return;
+      }
+      if (cap.firstChild) cap.firstChild.textContent = 'Sample data · ';
+      const strong = byId('spatialGradText');
+      if (strong) strong.textContent = src.people ? `simulated from ${src.people} ${src.people === 1 ? 'person' : 'people'}` : 'nobody in the room';
+      const devs = byId('whereDevices');
+      devs.hidden = false;
+      devs.textContent = `${src.heatmap.devices_in_room} devices in room`;
+      const legend = byId('heatLegend');
+      const showDots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
+      const kinds = [...new Set(src.heatmapDebug.devices.map((d) => d.kind))];
+      legend.hidden = !showDots || !kinds.length;
+      legend.innerHTML = kinds.sort().map((k) => `<span class="inline-flex items-center gap-1">`
+        + `<i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${kindColor(k)}"></i>`
+        + `${kindLabel(k)}</span>`).join('');
+    }
+
     function renderHeatmapMap(live) {
       const dwPx = cadCanvas.offsetWidth || 380;
       const dhPx = cadCanvas.offsetHeight || 180;
@@ -1827,7 +2041,9 @@
       const room = latest.room || { width_m: 8, length_m: 6 };
       const box = letterbox(w, h, room.width_m || 8, room.length_m || 6);
       cadHits = [];
-      cadCanvas.setAttribute('aria-label', 'Approximate map of where people are in the room');
+      cadCanvas.setAttribute('aria-label', live.sample
+        ? 'Sample map of where people are in the room (simulated)'
+        : 'Approximate map of where people are in the room');
       const glaze = byId('cadGlazingLabel');
       if (glaze) glaze.hidden = true;
       cadCtx.clearRect(0, 0, w, h);
@@ -1853,6 +2069,16 @@
       cadCtx.strokeStyle = '#94A3B8';
       cadCtx.lineWidth = 1.5;
       cadCtx.strokeRect(box.x, box.y, box.dw, box.dh);
+      if (live.sample) {
+        drawSampleWindows(box);
+        if (!live.people) {
+          cadCtx.fillStyle = '#64748B';
+          cadCtx.font = '13px "General Sans", system-ui, sans-serif';
+          cadCtx.textAlign = 'center';
+          cadCtx.textBaseline = 'middle';
+          cadCtx.fillText('Nobody in the room', box.x + box.dw / 2, box.y + box.dh / 2);
+        }
+      }
 
       const showDots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
       // Only devices counted as in the room. Rejected devices get a meaningless position
@@ -1910,7 +2136,8 @@
       const now = Date.now();
       if (now - lastCaptionAt > 900) {
         lastCaptionAt = now;
-        paintHeatmapCaption(live);
+        if (live.sample || live.waiting) paintSampleCaption(live);
+        else paintHeatmapCaption(live);
       }
       requestAnimationFrame(renderCadTopology);
     }
@@ -1982,14 +2209,9 @@
         banner.hidden = true;
         warnings.hidden = true;
         if (single) single.hidden = false;
-        const legend = byId('heatLegend');
-        if (legend) legend.hidden = true;
-        const devs = byId('whereDevices');
-        if (devs) devs.hidden = true;
-        const cap = byId('whereCaption');
-        if (cap && cap.firstChild && cap.firstChild.textContent.indexOf('Approximate') === 0) {
-          cap.firstChild.textContent = 'Core vs perimeter ';
-        }
+        const src = mapSource();
+        dotsBtn.hidden = !!src.waiting;
+        paintSampleCaption(src);
         if (window.hackaburgerBackend && window.hackaburgerBackend.setHeatmapDebug) {
           window.hackaburgerBackend.setHeatmapDebug(false);
         }
@@ -2177,7 +2399,49 @@
       tip.style.top = `${Math.min(top, rect.height - 36)}px`;
     }
 
+    /* Full-window map: the "Where people are" card fills the browser window */
+    function whereFullOpen() {
+      return byId('whereCard').classList.contains('map-full');
+    }
+    function syncWhereFullHead() {
+      if (!whereFullOpen()) return;
+      const live = heatmapLive();
+      const room = STATE.roomName || 'Room';
+      byId('whereFullTitle').textContent = `Where people are · ${room}`;
+      byId('whereFullSub').textContent = live
+        ? 'Live from the four boards'
+        : isBoardRoom() ? 'Waiting for the boards'
+        : `Sample data, simulated from the room's headcount · ${Caelum.clockString().slice(0, 5)}`;
+    }
+    function setWhereFull(on) {
+      const card = byId('whereCard');
+      if (on === whereFullOpen()) return;
+      card.classList.toggle('map-full', on);
+      document.body.classList.toggle('map-full-open', on);
+      if (on) {
+        card.setAttribute('role', 'dialog');
+        card.setAttribute('aria-modal', 'true');
+        syncWhereFullHead();
+        byId('whereCloseBtn').focus();
+      } else {
+        card.removeAttribute('role');
+        card.removeAttribute('aria-modal');
+        byId('cadTip').hidden = true;
+        byId('whereExpandBtn').focus();
+      }
+    }
+
     function wireHeatmapControls() {
+      byId('whereExpandBtn').addEventListener('click', () => setWhereFull(true));
+      byId('whereCloseBtn').addEventListener('click', () => setWhereFull(false));
+      // Esc closes the full view first (before it would exit a demo)
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && whereFullOpen()) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setWhereFull(false);
+        }
+      }, true);
       const liveOf = () => window.hackaburgerBackend;
       byId('heatmapDotsBtn').addEventListener('click', () => {
         const btn = byId('heatmapDotsBtn');
@@ -2293,198 +2557,26 @@
       });
     }
 
+    // Rooms that are meant to show the boards (Live Room / heatmap rooms) never show sample data
+    function isBoardRoom() {
+      if (Caelum.demo.mode() === 'live' || STATE.currentRoomId === 'live') return true;
+      const backend = window.hackaburgerBackend;
+      const room = backend && backend.serverRooms && backend.serverRooms[STATE.currentRoomId];
+      return !!(room && room.device === 'heatmap');
+    }
+    function waitingHeatmap() {
+      return {
+        waiting: true,
+        heatmap: { ts: 'waiting', room: { width_m: STATE.roomWidth || 8, length_m: STATE.roomLength || 6 }, heatmap: { values: [] }, boards: {} },
+        heatmapDebug: null,
+      };
+    }
+    function mapSource() {
+      return heatmapLive() || (isBoardRoom() ? waitingHeatmap() : sampleHeatmap());
+    }
+
     function renderCadTopology() {
-      const live = heatmapLive();
-      if (live) {
-        renderHeatmapMap(live);
-        return;
-      }
-      const dw = cadCanvas.offsetWidth || 380;
-      const dh = cadCanvas.offsetHeight || 165;
-      if (cadCanvas.width !== dw || cadCanvas.height !== dh) {
-        cadCanvas.width = dw;
-        cadCanvas.height = dh;
-      }
-      const w = cadCanvas.width;
-      const h = cadCanvas.height;
-      cadCtx.clearRect(0, 0, w, h);
-      cadCanvas.setAttribute('aria-label', 'Simulated room layout');
-      const glaze = byId('cadGlazingLabel');
-      if (glaze) glaze.hidden = false;
-      flowTick += 0.04;
-
-      const padX = 24;
-      const padY = 22;
-      const roomW = w - padX * 2;
-      const roomH = h - padY * 2;
-
-      // 1. Thermal/Gas Density Gradient Fill inside Room Footprint
-      const centerGrad = cadCtx.createRadialGradient(
-        w * 0.5, h * 0.52, 8,
-        w * 0.5, h * 0.52, roomW * 0.55
-      );
-      if (STATE.co2 < 750) {
-        centerGrad.addColorStop(0, 'rgba(34, 197, 94, 0.22)');
-        centerGrad.addColorStop(1, 'rgba(34, 197, 94, 0.02)');
-      } else if (STATE.co2 < 1350) {
-        centerGrad.addColorStop(0, 'rgba(245, 158, 11, 0.24)');
-        centerGrad.addColorStop(1, 'rgba(245, 158, 11, 0.03)');
-      } else {
-        centerGrad.addColorStop(0, 'rgba(239, 68, 68, 0.26)');
-        centerGrad.addColorStop(1, 'rgba(239, 68, 68, 0.03)');
-      }
-      cadCtx.fillStyle = centerGrad;
-      cadCtx.fillRect(padX, padY, roomW, roomH);
-
-      // 2. Architectural Room Perimeter Walls
-      cadCtx.strokeStyle = '#94A3B8';
-      cadCtx.lineWidth = 1.5;
-      cadCtx.strokeRect(padX, padY, roomW, roomH);
-
-      // 3. Conference Table Wireframe in Center
-      const tableW = roomW * 0.48;
-      const tableH = roomH * 0.36;
-      const tableX = (w - tableW) / 2;
-      const tableY = (h - tableH) / 2;
-      cadCtx.strokeStyle = '#CBD5E1';
-      cadCtx.fillStyle = 'rgba(255, 255, 255, 0.88)';
-      cadCtx.fillRect(tableX, tableY, tableW, tableH);
-      cadCtx.strokeRect(tableX, tableY, tableW, tableH);
-
-      // 4. Top Wall Window Apertures & Dynamic Airflow Vectors
-      const totalWindows = STATE.windows.length;
-      const displayCount = Math.min(totalWindows, 6);
-      const openCount = STATE.openWindowCount;
-
-      for (let i = 0; i < displayCount; i++) {
-        const win = STATE.windows[i];
-        const baseWidth = 36;
-        // Window aperture width scales with window's configurable area
-        const winWidth = Math.max(20, Math.min(56, Math.round(baseWidth * Math.sqrt(win.area || 1.0))));
-        const wx = padX + ((i + 1) * roomW) / (displayCount + 1) - winWidth / 2;
-
-        // Clear wall segment for window opening
-        cadCtx.fillStyle = '#F8FAFC';
-        cadCtx.fillRect(wx, padY - 2, winWidth, 4);
-
-        // Window sash line
-        cadCtx.strokeStyle = win.isOpen ? '#15803D' : '#94A3B8';
-        cadCtx.lineWidth = 2;
-        cadCtx.beginPath();
-        cadCtx.moveTo(wx, padY);
-        cadCtx.lineTo(wx + winWidth, win.isOpen ? padY + 7 : padY);
-        cadCtx.stroke();
-
-        // Window index label (W1, W2, etc.)
-        cadCtx.fillStyle = win.isOpen ? '#15803D' : '#64748B';
-        cadCtx.font = '8px "JetBrains Mono", monospace';
-        cadCtx.textAlign = 'center';
-        cadCtx.fillText(`W${i + 1}`, wx + winWidth / 2, padY - 6);
-
-        // Laminar airflow streamlines if this window is currently open
-        if (win.isOpen) {
-          cadCtx.strokeStyle = 'rgba(21, 128, 61, 0.55)';
-          cadCtx.lineWidth = Math.max(1, Math.min(2.5, (win.area || 1.0) * 1.2));
-          cadCtx.setLineDash([4, 4]);
-          cadCtx.lineDashOffset = -flowTick * 12;
-          cadCtx.beginPath();
-          cadCtx.moveTo(wx + winWidth / 2, padY + 4);
-          cadCtx.lineTo(wx + winWidth / 2, padY + roomH - 12);
-          cadCtx.stroke();
-          cadCtx.setLineDash([]);
-        }
-      }
-
-      // Update glazing annotation in CAD
-      const cadGlazingLabel = document.getElementById('cadGlazingLabel');
-      if (cadGlazingLabel) {
-        cadGlazingLabel.innerText = `${openCount} of ${totalWindows} open`;
-      }
-
-      // 5. RSSI Sniffer Perimeter Boundary (Dynamic scale by Control Strength Tx Power)
-      const activeNode = getActiveArduinoNode();
-      const strengthRadScale = {
-        '+8 dBm': 1.15,
-        '+4 dBm': 1.0,
-        '0 dBm': 0.88,
-        '-4 dBm': 0.74,
-        '-12 dBm': 0.58
-      }[activeNode.strength] || 1.0;
-
-      cadCtx.strokeStyle = 'rgba(14, 165, 233, 0.55)';
-      cadCtx.lineWidth = 1.2;
-      cadCtx.setLineDash([3, 3]);
-      cadCtx.beginPath();
-      cadCtx.ellipse(w / 2, h / 2, roomW * 0.46 * strengthRadScale, roomH * 0.44 * strengthRadScale, 0, 0, Math.PI * 2);
-      cadCtx.stroke();
-      cadCtx.setLineDash([]);
-
-      // 5B. Physical Arduino Uno Microcontroller Node(s) On Layout
-      const allArduinoNodes = getArduinoNodes();
-      allArduinoNodes.forEach((node, nIdx) => {
-        const nx = nIdx === 0 ? (w * 0.48) : (w * 0.85);
-        const ny = nIdx === 0 ? (h * 0.54) : (h * 0.78);
-        const isSelected = (nIdx === activeArduinoIndex);
-
-        // Pulsing RF beacon rings
-        const pulseR = 5 + Math.abs(Math.sin(flowTick * 1.6 + nIdx)) * (isSelected ? 9 * strengthRadScale : 5);
-        cadCtx.beginPath();
-        cadCtx.arc(nx, ny, pulseR, 0, Math.PI * 2);
-        cadCtx.fillStyle = isSelected ? 'rgba(21, 128, 61, 0.18)' : 'rgba(14, 165, 233, 0.16)';
-        cadCtx.fill();
-
-        // IC Chip Body
-        cadCtx.fillStyle = isSelected ? '#15803D' : '#0369A1';
-        cadCtx.fillRect(nx - 7, ny - 5, 14, 10);
-        cadCtx.strokeStyle = '#FFFFFF';
-        cadCtx.lineWidth = 0.8;
-        cadCtx.strokeRect(nx - 7, ny - 5, 14, 10);
-
-        // Chip Pins
-        cadCtx.fillStyle = '#64748B';
-        [-4, 0, 4].forEach(px => {
-          cadCtx.fillRect(nx + px - 1, ny - 7, 2, 2);
-          cadCtx.fillRect(nx + px - 1, ny + 5, 2, 2);
-        });
-
-        // Label
-        cadCtx.fillStyle = isSelected ? '#15803D' : '#0369A1';
-        cadCtx.font = '7px "JetBrains Mono", monospace';
-        cadCtx.textAlign = 'center';
-        cadCtx.fillText(`${node.id} (${node.strength})`, nx, ny + 13);
-      });
-
-      // 6. Active In-Room BLE Device Clusters (Ice Blue Nodes)
-      const activeNodes = Math.min(STATE.occupancy, 18);
-      for (let i = 0; i < activeNodes; i++) {
-        const angle = (i / Math.max(1, activeNodes)) * Math.PI * 2 + 0.3;
-        const rx = tableW * 0.62 + (i % 2) * 12;
-        const ry = tableH * 0.72 + (i % 2) * 8;
-        const nx = w / 2 + Math.cos(angle) * rx;
-        const ny = h / 2 + Math.sin(angle) * ry;
-
-        cadCtx.beginPath();
-        cadCtx.arc(nx, ny, 5.5, 0, Math.PI * 2);
-        cadCtx.fillStyle = 'rgba(14, 165, 233, 0.18)';
-        cadCtx.fill();
-
-        cadCtx.beginPath();
-        cadCtx.arc(nx, ny, 2.5, 0, Math.PI * 2);
-        cadCtx.fillStyle = '#0EA5E9';
-        cadCtx.fill();
-      }
-
-      // 7. Rejected Corridor Pass-by Nodes
-      const hallwayPositions = [w * 0.22, w * 0.58, w * 0.81];
-      hallwayPositions.forEach((hx, idx) => {
-        const hy = h - 9;
-        cadCtx.beginPath();
-        cadCtx.arc(hx + Math.sin(flowTick * 0.5 + idx) * 6, hy, 2.2, 0, Math.PI * 2);
-        cadCtx.fillStyle = '#94A3B8';
-        cadCtx.fill();
-      });
-
-      requestAnimationFrame(renderCadTopology);
+      renderHeatmapMap(mapSource());
     }
 
     /* =====================================================================
@@ -2919,10 +3011,9 @@
       const penalty = Math.abs(parseFloat(cog.reactionPenalty) || 0);
       latencyEl.style.color = penalty >= 1.5 ? '#B91C1C' : penalty >= 0.05 ? '#B45309' : '#15803D';
 
-      // Spatial label: fake floor plan, or the live heatmap caption
-      const gradDelta = STATE.isWindowOpen ? 35 : Math.round((co2Round - 420) * 0.22);
-      document.getElementById('spatialGradText').innerText = `+${gradDelta} ppm`;
+      // Map caption: live heatmap or sample data
       syncHeatmapChrome();
+      syncWhereFullHead();
 
       // Recompute Multi-Horizon Charts
       if (co2Chart && occChart) {
@@ -3099,7 +3190,6 @@
     let lastWinSig = '';
     let lastRoomId = null;
     let bufferFlashed = false;
-    const defaultBufferAction = byId('bufferActionText').innerHTML;
     const defaultYield = byId('yieldText').innerHTML;
     const defaultAvoided = byId('avoidedPeakText').innerHTML;
 
@@ -3185,37 +3275,87 @@
       renderAdminSchedule(d);
     }
 
+    const SCHED_PILL = 'text-[13px] px-2 py-1 rounded-lg ';
+    const SCHED_BADGES = {
+      done: ['Done', 'bg-white text-inkSecondary border border-borderLine'],
+      now: ['Now', 'bg-amberWarn/10 text-amberWarn'],
+      next: ['Next', 'bg-white text-inkPrimary border border-borderLine'],
+      later: ['Later', 'bg-white text-inkSecondary border border-borderLine'],
+      protected: ['Protected', 'bg-white text-iceForecast border border-iceForecast/25'],
+      flushNow: ['Now', 'bg-tealOptimal text-white font-medium'],
+      scheduled: ['Scheduled', 'bg-white text-tealOptimal font-medium'],
+      added: ['Added', 'bg-white text-tealOptimal font-medium'],
+    };
+    function bufferActionText(e) {
+      const n = Math.max(1, Math.min(e.windows || 2, STATE.windows.length));
+      return `Open ${n} window${n === 1 ? '' : 's'} so the next booking starts with fresh air.`;
+    }
+    const schedBadge = (b) => `<span class="${SCHED_PILL}${b[1]} shrink-0">${b[0]}</span>`;
+
+    // Today panel: the demo calendar during demos, otherwise the room's typical weekday
     function renderAdminSchedule(d) {
       const nowMin = Caelum.clockMinutesOfDay();
-      const [b1, buf, b2] = Caelum.SCHEDULE;
       const guided = d.mode === 'guided';
-      const pill = 'text-[13px] px-2 py-1 rounded-lg ';
-      const setBadge = (id, text, cls) => { const el = byId(id); el.innerText = text; el.className = pill + cls; };
-
-      if (nowMin >= b1.end) setBadge('schedBadge1', 'Done', 'bg-white text-inkSecondary border border-borderLine');
-      else if (nowMin >= b1.start) setBadge('schedBadge1', 'Now', 'bg-amberWarn/10 text-amberWarn');
-      else setBadge('schedBadge1', 'Later', 'bg-white text-inkSecondary border border-borderLine');
-
-      if (nowMin >= b2.end) setBadge('schedBadge2', 'Done', 'bg-white text-inkSecondary border border-borderLine');
-      else if (nowMin >= b2.start) setBadge('schedBadge2', 'Now', 'bg-amberWarn/10 text-amberWarn');
-      else setBadge('schedBadge2', 'Protected', 'bg-white text-iceForecast border border-iceForecast/25');
+      const fmt = Caelum.formatClock;
+      const sampleDay = Caelum.isSampleWeekday();
+      const title = byId('todayTitle');
+      if (title) title.textContent = sampleDay ? 'Typical weekday' : 'Today';
+      let seenBuffer = false;
+      let nextMarked = false;
+      let afterBuffer = false;
+      const rows = Caelum.upcomingSchedule(5).map((e) => {
+        const done = nowMin >= e.end;
+        const on = nowMin >= e.start && nowMin < e.end;
+        const time = `${fmt(e.start)}–${fmt(e.end)}`;
+        if (e.type === 'buffer') {
+          const first = !seenBuffer;
+          seenBuffer = true;
+          if (first && guided && d.step < 4) return '';            // not inserted yet
+          afterBuffer = !done;
+          const b = first && d.buffer ? SCHED_BADGES.added : done ? SCHED_BADGES.done : on ? SCHED_BADGES.flushNow : SCHED_BADGES.scheduled;
+          return `<div ${first ? 'id="bufferRow" ' : ''}class="sched-buffer flex items-center justify-between gap-3 p-3 rounded-xl${done ? ' opacity-60' : ''}">
+            <div>
+              <div class="text-tealOptimal font-mono-tabular text-[13px]">${time}</div>
+              <div class="text-inkPrimary font-medium mt-0.5">Fresh-air break</div>
+              <div ${first ? 'id="bufferActionText" ' : ''}class="text-inkSecondary mt-0.5">${bufferActionText(e)}</div>
+            </div>${schedBadge(b)}</div>`;
+        }
+        let b;
+        if (done) b = SCHED_BADGES.done;
+        else if (on) b = SCHED_BADGES.now;
+        else if (afterBuffer) b = SCHED_BADGES.protected;
+        else b = nextMarked ? SCHED_BADGES.later : SCHED_BADGES.next;
+        if (!done && !on) nextMarked = true;
+        afterBuffer = false;
+        const meta = on ? `${e.scheduled} booked · ${STATE.occupancy} here`
+          : done ? `${e.scheduled} booked · ${e.expected === 0 ? 'nobody came' : `${e.expected} came`}`
+          : `${e.scheduled} booked · ${e.expected === 0 ? 'likely no-show' : `~${e.expected} expected`}`;
+        return `<div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-white border border-borderLine${done ? ' opacity-60' : ''}">
+            <div>
+              <div class="text-inkMuted font-mono-tabular text-[13px]">${time}</div>
+              <div class="text-inkPrimary font-medium mt-0.5">${e.title}</div>
+              <div class="text-inkSecondary mt-0.5">${meta}</div>
+            </div>${schedBadge(b)}</div>`;
+      });
+      let html = rows.join('');
+      if (!html) html = '<p class="text-inkSecondary">No bookings for this room. People are counted by the boards.</p>';
+      const pane = byId('calendarPane');
+      if (pane.dataset.sig !== html) {
+        pane.dataset.sig = html;
+        pane.innerHTML = html;
+      }
 
       const row = byId('bufferRow');
-      row.classList.toggle('hidden', guided && d.step < 4);        // not inserted yet
-      if (d.buffer) {
-        setBadge('bufferBadge', 'Added', 'bg-white text-tealOptimal font-medium');
+      if (row && d.buffer) {
         if (!bufferFlashed) {
           bufferFlashed = true;
           row.classList.remove('demo-flash'); void row.offsetWidth; row.classList.add('demo-flash');
         }
       } else {
         bufferFlashed = false;
-        if (nowMin >= buf.end) setBadge('bufferBadge', 'Done', 'bg-white text-inkSecondary border border-borderLine');
-        else if (nowMin >= buf.start) setBadge('bufferBadge', 'Now', 'bg-tealOptimal text-white font-medium');
-        else setBadge('bufferBadge', 'Scheduled', 'bg-white text-tealOptimal font-medium');
       }
 
-      const actionEl = byId('bufferActionText');
+      const actionEl = byId('bufferActionText') || document.createElement('div');
       const yieldEl = byId('yieldText');
       const avoidedEl = byId('avoidedPeakText');
       if (d.avoided) {
@@ -3224,7 +3364,8 @@
         yieldEl.innerHTML = `Focus goes from ${a.cpiUnmitigated.toFixed(0)}% to ${a.cpiActual.toFixed(0)}%.`;
         avoidedEl.innerHTML = `Without the break the air would reach ${a.unmitigatedPeak.toLocaleString()} ppm. With it, ${a.actualPeak.toLocaleString()} ppm.`;
       } else {
-        actionEl.innerHTML = defaultBufferAction;
+        const firstBuf = Caelum.upcomingSchedule(5).find((e) => e.type === 'buffer');
+        if (firstBuf) actionEl.innerHTML = bufferActionText(firstBuf);
         yieldEl.innerHTML = defaultYield;
         avoidedEl.innerHTML = defaultAvoided;
       }
@@ -3550,6 +3691,11 @@
         if (isOpen('addRoomModal') || isOpen('arduinoAdminModal')) return;
 
         const k = e.key;
+        if (k === 'm' || k === 'M') {
+          e.preventDefault();
+          setWhereFull(!whereFullOpen());
+          return;
+        }
         if (k === 'l' || k === 'L') {
           e.preventDefault();
           const entering = Caelum.demo.mode() !== 'live';

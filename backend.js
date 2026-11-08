@@ -26,6 +26,11 @@
   // Indexes into TIME_LABELS: 8 past slots every 15 min, NOW, then future offsets in minutes
   const FUTURE_MIN = [15, 30, 45, 60, 90, 120, 150, 180, 240];
 
+  // Only the Live Room uses the boards. The other rooms always run on the page's sample data,
+  // even if the server links them to a board (e.g. appleton still has device "heatmap").
+  const LIVE_ROOM_ID = 'live';
+  const usesBoards = (roomId) => roomId === LIVE_ROOM_ID;
+
   function getCaelum() { return window.Caelum; }
   function getState() { return (window.Caelum && window.Caelum.STATE) || window.STATE; }
   function getDefaultRooms() { return (window.Caelum && window.Caelum.DEFAULT_ROOMS) || window.DEFAULT_ROOMS || []; }
@@ -250,6 +255,7 @@
   function syncWindows() {
     const STATE = getState();
     if (!live.enabled || live.forceSim || !STATE || !live.serverRooms[STATE.currentRoomId]) return;
+    if (!usesBoards(STATE.currentRoomId)) return;   // sample rooms keep their windows in the page
     const open = (STATE.windows || []).map((w, i) => (w.isOpen ? i : -1)).filter(i => i >= 0);
     api(`/rooms/${encodeURIComponent(STATE.currentRoomId)}/windows`, { method: 'PUT', body: { open } })
       .then(() => poll())
@@ -285,6 +291,13 @@
     const STATE = getState();
     if (!STATE) return;
     const server = live.serverRooms[STATE.currentRoomId];
+    if (!usesBoards(STATE.currentRoomId)) {
+      live.mode = 'sim';
+      live.forecast = live.pastCo2 = live.pastOcc = live.board = live.heatmap = null;
+      live.devices = [];
+      renderBadge();
+      return;
+    }
     if (live.enabled && server && !live.forceSim) {
       if (STATE.windows) {
         STATE.windows.forEach((w, i) => { w.isOpen = Boolean(server.windows[i] && server.windows[i].is_open); });
@@ -377,7 +390,7 @@
     if (!STATE) return;
     const roomId = STATE.currentRoomId;
     const room = live.serverRooms[roomId];
-    if (!room) { live.mode = 'sim'; renderBadge(); return; }
+    if (!room || !usesBoards(roomId)) { live.mode = 'sim'; renderBadge(); return; }
     const now = Date.now();
     const from = new Date(now - 2 * 3600 * 1000).toISOString();
     const demoLive = Caelum && Caelum.demo && Caelum.demo.mode() === 'live';

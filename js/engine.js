@@ -1133,8 +1133,7 @@
   // Advance the model by `minutes` sim-minutes (windows/occupancy as-is).
   function advanceModel(minutes) {
     // While the boards are connected, CO₂ comes from their people count.
-    var backendOwnsCo2 = root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim';
-    if (backendOwnsCo2) {
+    if (backendOwnsRoom()) {
       STATE.simMinutesFrom9AM += minutes;
       if (FLUSH.running) FLUSH.elapsedSec += minutes * 60;
       return;
@@ -1148,21 +1147,26 @@
   }
 
   /* ---- 7b. REAL-TIME DAY: the sample room follows its typical weekday ---- */
-  var OCCUPANT_OPEN_PPM = 1600;   // nobody in the room acts before this: someone cracks a window
-  var OCCUPANT_CLOSE_PPM = 800;   // ... and shuts it again once the air is fresh
+  var OCCUPANT_OPEN_PPM = 1600;   // nobody in the room acts before this: someone opens the windows
+  var OCCUPANT_CLOSE_PPM = 800;   // ... and shuts them again once the air is fresh
+  var MAX_OPEN_MIN = 15;          // ... or after 15 minutes at most (sample data never airs for hours)
   var HISTORY_MIN = 240;
   var history = [];               // [{ abs, co2, occ, sched }] one entry per real minute
   var occOverrideUntil = 0;       // ms: a manual headcount holds until the next calendar change
-  var occupantOpened = false;     // the simulated occupants (not the user) opened a window
+  var occupantOpened = false;     // the simulated occupants (not the user) opened the windows
+  var occupantOpenedAt = 0;       // ... at this real minute (realMinutesOfDayAbs)
   var lastPlanEvId = null;
 
+  // Only the Live Room takes its people and CO2 from the boards
   function backendOwnsRoom() {
-    return !!(root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim');
+    return STATE.currentRoomId === LIVE_ROOM_ID &&
+      !!(root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim');
   }
 
-  // What the people in the room do at minute `tod`: follow Caelum's fresh-air breaks,
-  // and crack a window when the air gets really bad. Returns the open-window count.
-  function occupantWindows(plan, tod, prevEvId, co2, openNow, occ, nWin, flags) {
+  // What the people in the room do at minute `tod` (absolute minute `abs`): follow Caelum's
+  // 10-min fresh-air breaks, and open 2 windows when the air gets really bad, closing them
+  // once it's fresh or after MAX_OPEN_MIN. Returns the open-window count.
+  function occupantWindows(plan, tod, abs, prevEvId, co2, openNow, occ, nWin, flags) {
     var ev = eventAt(plan.events, tod);
     var evId = ev ? ev.id : null;
     if (evId !== prevEvId) {
@@ -1170,8 +1174,16 @@
       if (ev && ev.type === 'buffer') { flags.byOccupants = false; return Math.min(ev.windows || 2, nWin); }
       if (prev && prev.type === 'buffer') { flags.byOccupants = false; return 0; }
     }
-    if (openNow === 0 && occ > 0 && co2 >= OCCUPANT_OPEN_PPM) { flags.byOccupants = true; return 1; }
-    if (openNow > 0 && flags.byOccupants && co2 <= OCCUPANT_CLOSE_PPM) { flags.byOccupants = false; return 0; }
+    if (openNow === 0 && occ > 0 && co2 >= OCCUPANT_OPEN_PPM) {
+      flags.byOccupants = true;
+      flags.openedAt = abs;
+      return Math.min(2, nWin);
+    }
+    if (openNow > 0 && flags.byOccupants &&
+        (co2 <= OCCUPANT_CLOSE_PPM || abs - flags.openedAt >= MAX_OPEN_MIN)) {
+      flags.byOccupants = false;
+      return 0;
+    }
     return openNow;
   }
 
@@ -1202,12 +1214,13 @@
       if (plan && !owned) {
         if (Date.now() >= occOverrideUntil) STATE.occupancy = plannedOccupancy(plan, tod);
         STATE.scheduledCount = plannedScheduled(plan, tod);
-        var flags = { byOccupants: occupantOpened };
+        var flags = { byOccupants: occupantOpened, openedAt: occupantOpenedAt };
         var ev = eventAt(plan.events, tod);
-        var open = occupantWindows(plan, tod, lastPlanEvId, STATE.co2, STATE.openWindowCount,
+        var open = occupantWindows(plan, tod, abs, lastPlanEvId, STATE.co2, STATE.openWindowCount,
           STATE.occupancy, STATE.windows.length, flags);
         lastPlanEvId = ev ? ev.id : null;
         occupantOpened = flags.byOccupants;
+        occupantOpenedAt = flags.openedAt;
         if (open !== STATE.openWindowCount) setOpenInternal(open);
         STATE.co2 = stepMassBalanceCO2(STATE.co2, STATE.occupancy, STATE.roomVolume,
           planAirflowQ(plan, STATE.occupancy, getCurrentAirflowQ()), step / 60.0, STATE.co2GenPerPerson);
@@ -1240,14 +1253,14 @@
     var nowTod = Math.floor(realMinutesOfDay());
     var c = STATE.cOutdoor + 20;
     var open = 0;
-    var flags = { byOccupants: false };
+    var flags = { byOccupants: false, openedAt: 0 };
     var prevEvId = null;
     var nWin = STATE.windows.length;
     for (var m = -1440; m < 0; m++) {
       var tod = (((nowTod + m) % 1440) + 1440) % 1440;
       var occ = plannedOccupancy(plan, tod);
       var ev = eventAt(plan.events, tod);
-      open = occupantWindows(plan, tod, prevEvId, c, open, occ, nWin, flags);
+      open = occupantWindows(plan, tod, nowAbs + m, prevEvId, c, open, occ, nWin, flags);
       prevEvId = ev ? ev.id : null;
       c = stepMassBalanceCO2(c, occ, STATE.roomVolume, planAirflowQ(plan, occ, windowsQ(open)),
         1 / 60.0, STATE.co2GenPerPerson);
@@ -1256,10 +1269,11 @@
     STATE.co2 = c;
     STATE.occupancy = plannedOccupancy(plan, nowTod);
     STATE.scheduledCount = plannedScheduled(plan, nowTod);
-    open = occupantWindows(plan, nowTod, prevEvId, c, open, STATE.occupancy, nWin, flags);
+    open = occupantWindows(plan, nowTod, nowAbs, prevEvId, c, open, STATE.occupancy, nWin, flags);
     var evNow = eventAt(plan.events, nowTod);
     lastPlanEvId = evNow ? evNow.id : null;
     occupantOpened = flags.byOccupants;
+    occupantOpenedAt = flags.openedAt;
     FLUSH.running = false; FLUSH.elapsedSec = 0;
     setOpenInternal(open);
     pushHistory(nowAbs);
@@ -1363,6 +1377,8 @@
      ===================================================================== */
   var demoMode = 'none';      // 'none' | 'live' | 'warp' | 'guided'
   var warpPhase = 'idle';     // 'idle' | 'running' | 'paused' | 'done'
+  var warpOpenedAt = 0;       // sim minute the 8-hour day last opened the windows
+  var warpWasOpen = false;
 
   function warpStep() {
     STATE.simMinutesFrom9AM += 5;
@@ -1382,11 +1398,15 @@
     );
     if (FLUSH.running) FLUSH.elapsedSec += 5 * 60;
 
+    if (STATE.isWindowOpen && !warpWasOpen) warpOpenedAt = STATE.simMinutesFrom9AM;  // opened by hand
     if (STATE.co2 > 1450 && !STATE.isWindowOpen) {
       setOpenInternal(Math.min(2, STATE.windows.length));
-    } else if (STATE.co2 < 620 && STATE.isWindowOpen) {
+      warpOpenedAt = STATE.simMinutesFrom9AM;
+    } else if (STATE.isWindowOpen &&
+               (STATE.co2 < 620 || STATE.simMinutesFrom9AM - warpOpenedAt >= MAX_OPEN_MIN)) {
       setOpenInternal(0);
     }
+    warpWasOpen = STATE.isWindowOpen;
     syncFlush();
 
     if (totalMins >= 17 * 60) {

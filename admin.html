@@ -1834,7 +1834,11 @@
       cadCtx.strokeRect(box.x, box.y, box.dw, box.dh);
 
       const showDots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
-      const debugDevices = showDots && live.heatmapDebug ? live.heatmapDebug.devices || [] : [];
+      // Only devices counted as in the room. Rejected devices get a meaningless position
+      // (the weighted centre pulls outside devices into the middle), so they're never drawn;
+      // the device table below still lists them with their reason.
+      const debugDevices = showDots && live.heatmapDebug
+        ? (live.heatmapDebug.devices || []).filter((d) => d.status === 'in_room') : [];
       debugDevices.forEach((d) => {
         if (d.x == null || d.y == null) return;
         const px = box.x + (d.x / room.width_m) * box.dw;
@@ -1910,7 +1914,7 @@
         devs.hidden = true;
       } else {
         devs.hidden = false;
-        devs.textContent = `${latest.devices_in_room} devices`;
+        devs.textContent = `${latest.devices_in_room} devices in room`;
       }
     }
 
@@ -1975,7 +1979,7 @@
         byId('heatEdgeSlider').value = String(Math.round(cal.edge_dbm != null ? cal.edge_dbm : -85));
       }
       if (!fieldFocused('heatEdgeAuto')) byId('heatEdgeAuto').checked = cal.edge_mode !== 'manual';
-      byId('heatEdgeVal').textContent = dbmText(byId('heatEdgeSlider').value);
+      byId('heatEdgeVal').textContent = `${dbmText(byId('heatEdgeSlider').value)} · ${byId('heatEdgeAuto').checked ? 'auto' : 'manual'}`;
 
       if (cfg) {
         if (!fieldFocused('heatWidth')) byId('heatWidth').value = cfg.room.width_m;
@@ -2147,7 +2151,7 @@
       document.querySelector('details.more').addEventListener('toggle', syncDebugPolling);
 
       byId('heatEdgeSlider').addEventListener('input', () => {
-        byId('heatEdgeVal').textContent = dbmText(byId('heatEdgeSlider').value);
+        byId('heatEdgeVal').textContent = `${dbmText(byId('heatEdgeSlider').value)} · manual`;
         byId('heatEdgeAuto').checked = false;
         const v = Number(byId('heatEdgeSlider').value);
         heatLater('edge', () => {
@@ -3232,7 +3236,7 @@
         const ratio = Number(byId('liveRatio').value);
         if (heat && heat.devices_in_room != null && ratio >= 0.5) {
           const people = Math.max(0, Math.round(heat.devices_in_room / ratio));
-          now.textContent = `${people} people · ${heat.devices_in_room} devices`;
+          now.textContent = `${people} people · ${heat.devices_in_room} devices in room`;
         } else if (heat && heat.people_smoothed != null) {
           now.textContent = `${heat.people_smoothed} people`;
         } else {

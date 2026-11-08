@@ -18,6 +18,7 @@
   'use strict';
 
   var CHANNEL_NAME = 'caelum';
+  var WARP_STEP_MS = 65;         // 8-hour day: +5 sim-minutes per step (09:00-17:00 in about 6 s)
   var TICK_MS = 2000;            // background tick every 2 s (real time; paused 8-hour day: 1 sim-minute)
   var FLUSH_TARGET_PPM = 800;    // "recovered" level used to size a window flush
   var STUFFY_PPM = 1000;         // threshold used for the countdown / alerts
@@ -1373,7 +1374,7 @@
   }
 
   /* =====================================================================
-     8. DEMO MODE A: 8-HOUR DAY TIME-WARP (+5 sim-min every 130 ms)
+     8. DEMO MODE A: 8-HOUR DAY TIME-WARP (+5 sim-min every WARP_STEP_MS)
      ===================================================================== */
   var demoMode = 'none';      // 'none' | 'live' | 'warp' | 'guided'
   var warpPhase = 'idle';     // 'idle' | 'running' | 'paused' | 'done'
@@ -1448,7 +1449,7 @@
     warpPhase = 'running';
     STATE.isTimeWarpRunning = true;
     refreshTicker();                                // stops the background tick
-    STATE.warpTimer = root.setInterval(warpStep, 130);
+    STATE.warpTimer = root.setInterval(warpStep, WARP_STEP_MS);
     emit('warp-start');
   }
 

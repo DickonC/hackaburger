@@ -824,6 +824,29 @@
             </label>
           </div>
           <p class="mt-2 text-[13px] text-inkSecondary">Live is what the map needs. A change waits until each board checks in: about 10 seconds in Live, up to 5 minutes in Dev.</p>
+          <div id="heatMethodBox" class="mt-5 p-4 rounded-xl border border-borderLine bg-white">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-sm font-medium text-inkPrimary">Location method</span>
+              <button id="heatMethodResetBtn" type="button" class="heat-ctl text-[13px] px-2.5 py-1 rounded-lg border border-borderLine bg-white text-inkPrimary">Back to original</button>
+            </div>
+            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <div class="text-[13px] text-inkSecondary mb-1.5">Counts as in the room</div>
+                <div class="flex flex-wrap gap-1.5" role="group" aria-label="Room edge rule">
+                  <button id="heatRuleWeakest" type="button" aria-pressed="false" class="heat-ctl heat-seg text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">Weakest board</button>
+                  <button id="heatRuleSecond" type="button" aria-pressed="false" class="heat-ctl heat-seg text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">Second-weakest</button>
+                </div>
+              </div>
+              <div>
+                <div class="text-[13px] text-inkSecondary mb-1.5">Where a device is drawn</div>
+                <div class="flex flex-wrap gap-1.5" role="group" aria-label="Position method">
+                  <button id="heatPosWeighted" type="button" aria-pressed="false" class="heat-ctl heat-seg text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">Weighted average</button>
+                  <button id="heatPosFit" type="button" aria-pressed="false" class="heat-ctl heat-seg text-sm px-3 py-1.5 rounded-xl border border-borderLine bg-white text-inkPrimary">Path-loss fit</button>
+                </div>
+              </div>
+            </div>
+            <p id="heatMethodNote" class="mt-3 text-[13px] text-inkSecondary"></p>
+          </div>
           <div class="mt-4 flex flex-wrap items-end gap-2">
             <label class="text-sm text-inkSecondary">People you counted
               <input id="heatHeadcount" type="number" min="1" max="500" step="1" class="heat-ctl mt-1 block w-28 bg-canvas border border-borderLine rounded-lg px-2 py-1.5 text-inkPrimary" aria-label="Counted people">
@@ -2256,6 +2279,7 @@
       const led = board1 && board1.config ? board1.config.threshold_dbm : -75;
       if (!fieldFocused('heatLedSlider')) byId('heatLedSlider').value = String(led);
       byId('heatLedVal').textContent = dbmText(byId('heatLedSlider').value);
+      syncLocationMethod(cfg);
       setPressed(byId('heatLiveBtn'), latest.mode === 'live');
       setPressed(byId('heatDevBtn'), latest.mode === 'dev');
       const shared = live.heatmapBoard || {};
@@ -2363,6 +2387,30 @@
       const details = document.querySelector('details.more');
       const dots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
       live.setHeatmapDebug(!!heatmapLive() && (!!(details && details.open) || dots || previewActive()));
+    }
+
+    // Location method (docs/heatmap-fit-brief.md): each switch is one config change, takes effect
+    // at the next snapshot (about 10 s), and "Back to original" restores today's behaviour.
+    const LOCATION_ORIGINAL = { filter: { edge_rule: 'weakest' }, position: { method: 'weighted' } };
+    function syncLocationMethod(cfg) {
+      const rule = cfg && cfg.filter && cfg.filter.edge_rule;
+      const method = cfg && cfg.position && cfg.position.method;
+      const supported = rule !== undefined && method !== undefined;
+      ['heatRuleWeakest', 'heatRuleSecond', 'heatPosWeighted', 'heatPosFit', 'heatMethodResetBtn'].forEach((id) => {
+        byId(id).disabled = !supported;
+        byId(id).classList.toggle('opacity-50', !supported);
+      });
+      setPressed(byId('heatRuleWeakest'), rule === 'weakest');
+      setPressed(byId('heatRuleSecond'), rule === 'second_weakest');
+      setPressed(byId('heatPosWeighted'), method === 'weighted');
+      setPressed(byId('heatPosFit'), method === 'fit');
+      const original = rule === 'weakest' && method === 'weighted';
+      byId('heatMethodResetBtn').hidden = supported && original;
+      byId('heatMethodNote').textContent = !supported
+        ? 'The server does not have the new location methods yet (backend branch feature/heatmap-fit).'
+        : `${original ? 'Original method.' : 'New method on.'} A switch takes effect at the next snapshot, about 10 seconds. `
+          + 'Second-weakest keeps more people in the corners; the fit spreads dots more naturally. '
+          + 'Switching the rule on also sets the room edge back to auto.';
     }
 
     async function heatRun(label, fn) {
@@ -2511,6 +2559,21 @@
         if (!live) return;
         heatRun('Saving offsets…', () => live.putHeatmapConfig({ offsets_mode: byId('heatOffsetsMode').value }));
       });
+      const setLocation = (label, body) => {
+        const live = liveOf();
+        if (!live) return;
+        heatRun(label, () => live.putHeatmapConfig(body));
+      };
+      byId('heatRuleWeakest').addEventListener('click', () =>
+        setLocation('Switching to the weakest-board rule…', { filter: { edge_rule: 'weakest' } }));
+      byId('heatRuleSecond').addEventListener('click', () =>
+        setLocation('Switching to the second-weakest rule…', { filter: { edge_rule: 'second_weakest', edge_mode: 'auto' } }));
+      byId('heatPosWeighted').addEventListener('click', () =>
+        setLocation('Switching to the weighted average…', { position: { method: 'weighted' } }));
+      byId('heatPosFit').addEventListener('click', () =>
+        setLocation('Switching to the path-loss fit…', { position: { method: 'fit' } }));
+      byId('heatMethodResetBtn').addEventListener('click', () =>
+        setLocation('Back to the original method…', LOCATION_ORIGINAL));
       byId('heatLiveBtn').addEventListener('click', () => {
         const live = liveOf();
         if (!live) return;

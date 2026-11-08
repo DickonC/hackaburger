@@ -83,8 +83,27 @@
         { id: 1, name: "Bedroom Sash Win", area: 0.8, isOpen: false }
       ],
       isCustom: false
+    },
+    {
+      id: "live",
+      name: "Live Room",
+      shortName: "Live Room",
+      volume: 120.0,
+      width: 8.0,
+      length: 6.0,
+      height: 2.5,
+      occupancy: 0,
+      scheduledCount: 0,
+      capacity: 24,
+      co2: 480.0,
+      windows: [
+        { id: 1, name: "Window 1", area: 1.2, isOpen: false },
+        { id: 2, name: "Window 2", area: 1.2, isOpen: false }
+      ],
+      isCustom: false
     }
   ];
+  var LIVE_ROOM_ID = "live";
 
   function lsGet(key) {
     try { return root.localStorage ? root.localStorage.getItem(key) : null; }
@@ -1016,6 +1035,7 @@
       return;
     }
     if (demoMode === 'guided') exitGuidedInternal(true);
+    if (demoMode === 'live') exitLive();
     var resume = (warpPhase === 'paused');
     if (!resume || STATE.simMinutesFrom9AM >= 460) {
       // fresh run (or replay): start the day at 09:00 on a fresh-air baseline
@@ -1244,6 +1264,7 @@
 
   function guidedStart() {
     if (demoMode === 'guided') return;
+    if (demoMode === 'live') exitLive();
     if (STATE.isTimeWarpRunning) stopWarpInternal('idle');
     warpPhase = 'idle';
     G.pre = { snap: snapshot(), warpPhase: warpPhase };
@@ -1308,10 +1329,15 @@
   /* =====================================================================
      9b. LIVE MODE: choose the room, its size, people, and windows
      ===================================================================== */
+  var liveReturnId = null;
   function startLive() {
     if (demoMode === 'live') return;
     if (STATE.isTimeWarpRunning) stopWarpInternal('idle');
     if (demoMode === 'guided') exitGuidedInternal(true);
+    if (STATE.currentRoomId !== LIVE_ROOM_ID) {
+      liveReturnId = STATE.currentRoomId;
+      switchRoom(LIVE_ROOM_ID);
+    }
     demoMode = 'live';
     refreshTicker();
     emit('live-start');
@@ -1320,6 +1346,9 @@
   function exitLive() {
     if (demoMode !== 'live') return;
     demoMode = 'none';
+    var back = liveReturnId;
+    liveReturnId = null;
+    if (back && back !== STATE.currentRoomId) switchRoom(back);
     refreshTicker();
     emit('live-exit');
   }

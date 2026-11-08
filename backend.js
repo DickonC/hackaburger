@@ -133,6 +133,7 @@
     const defRooms = getDefaultRooms();
     if (defRooms && presets.length) {
       defRooms.splice(0, defRooms.length, ...presets);
+      if (!defRooms.some((r) => r.id === 'live')) defRooms.push(livePageRoom());
     }
     live.customs = rooms.filter(r => !isPreset(r)).map(toPageRoom);
     const Caelum = getCaelum();
@@ -141,8 +142,50 @@
     }
   }
 
+  function livePageRoom() {
+    return {
+      id: 'live',
+      name: 'Live Room',
+      shortName: 'Live Room',
+      volume: 120,
+      width: 8,
+      length: 6,
+      height: 2.5,
+      occupancy: 0,
+      scheduledCount: 0,
+      capacity: 24,
+      co2: 480,
+      windows: [
+        { id: 1, name: 'Window 1', area: 1.2, isOpen: false },
+        { id: 2, name: 'Window 2', area: 1.2, isOpen: false },
+      ],
+      isCustom: false,
+      device: 'heatmap',
+    };
+  }
+
+  async function ensureLiveRoom() {
+    if (live.serverRooms.live) return;
+    const body = {
+      id: 'live',
+      name: 'Live Room',
+      volume_m3: 120,
+      capacity: 24,
+      device: 'heatmap',
+      scheduled_count: 0,
+      windows: [{ name: 'Window 1', area_m2: 1.2 }, { name: 'Window 2', area_m2: 1.2 }],
+    };
+    try {
+      live.serverRooms.live = await api('/rooms', { method: 'POST', body });
+    } catch (e) {
+      if (e.status !== 409) throw e;
+    }
+    applyServerRooms(await api('/rooms'));
+  }
+
   async function loadRooms() {
     applyServerRooms(await api('/rooms'));
+    if (!live.serverRooms.live) await ensureLiveRoom();
   }
 
   // Custom rooms made before the backend existed live in localStorage: upload them once
@@ -421,27 +464,31 @@
     const Caelum = getCaelum();
     const STATE = getState();
     if (!Caelum || !STATE || !Caelum.demo || Caelum.demo.mode() !== 'live') return;
-    const id = STATE.currentRoomId;
-    if (live.liveDeviceRoom && live.liveDeviceRoom !== id && live.deviceBeforeLive !== undefined) {
-      try {
-        const prev = await api(`/rooms/${encodeURIComponent(live.liveDeviceRoom)}`, {
-          method: 'PUT', body: { device: live.deviceBeforeLive },
-        });
-        live.serverRooms[live.liveDeviceRoom] = prev;
-      } catch (e) { /* the room we left keeps its last device if this fails */ }
-      live.deviceBeforeLive = undefined;
-      live.liveDeviceRoom = null;
-    }
-    if (live.liveDeviceRoom !== id) {
-      const current = live.serverRooms[id];
-      live.deviceBeforeLive = current ? current.device : null;
-      live.liveDeviceRoom = id;
-    }
+    const id = 'live';
+    if (STATE.currentRoomId !== id) return;
+    live.liveDeviceRoom = id;
+    live.deviceBeforeLive = 'heatmap';
     const volume = Number(STATE.roomVolume);
     const roomBody = { device: 'heatmap' };
     if (volume >= 1 && volume <= 100000) roomBody.volume_m3 = Math.round(volume * 10) / 10;
     try {
-      live.serverRooms[id] = await api(`/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body: roomBody });
+      try {
+        live.serverRooms[id] = await api(`/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body: roomBody });
+      } catch (e) {
+        if (e.status !== 404) throw e;
+        live.serverRooms[id] = await api('/rooms', {
+          method: 'POST',
+          body: {
+            id: 'live',
+            name: 'Live Room',
+            volume_m3: roomBody.volume_m3 || 120,
+            capacity: 24,
+            device: 'heatmap',
+            scheduled_count: 0,
+            windows: [{ name: 'Window 1', area_m2: 1.2 }, { name: 'Window 2', area_m2: 1.2 }],
+          },
+        });
+      }
       await api('/heatmap/mode', { method: 'PUT', body: { mode: 'live' } });
       const width_m = Number(STATE.roomWidth);
       const length_m = Number(STATE.roomLength);
@@ -461,7 +508,7 @@
     const device = live.deviceBeforeLive;
     live.liveDeviceRoom = null;
     live.deviceBeforeLive = undefined;
-    if (!live.enabled || !id || device === undefined) return;
+    if (!live.enabled || !id || id === 'live' || device === undefined) return;
     try {
       live.serverRooms[id] = await api(`/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body: { device } });
     } catch (e) {

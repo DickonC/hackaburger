@@ -61,6 +61,9 @@ SEED_ROOMS = [
                  {"name": "East Win 1", "area_m2": 1.0}, {"name": "East Win 2", "area_m2": 1.0}]},
     {"id": "personal", "name": "Personal Study Mode — Dorm / Bedroom", "volume_m3": 32.0, "capacity": 2,
      "scheduled_count": 1, "windows": [{"name": "Bedroom Sash Win", "area_m2": 0.8}]},
+    {"id": "live", "name": "Live Room", "volume_m3": 120.0, "capacity": 24,
+     "device": "heatmap", "scheduled_count": 0,
+     "windows": [{"name": "Window 1", "area_m2": 1.2}, {"name": "Window 2", "area_m2": 1.2}]},
 ]
 
 router = APIRouter(dependencies=[Depends(require_key)])

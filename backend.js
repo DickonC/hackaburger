@@ -46,6 +46,8 @@
     debugOn: false,
     lastUpdate: 0, error: null, polling: null, pollMs: 0, debugTimer: null, badgeTimer: null,
     pendingUpdates: {}, // room id -> debounce timer for PUTs (sliders fire many changes)
+    roomPatch: {},
+    roomPatchTimers: {},
   };
 
   // ------------------------------------------------------------ API
@@ -248,7 +250,9 @@
       live.devices = [];
       const updateWin = window.updateWindowControlsUI || (typeof updateWindowControlsUI === 'function' ? updateWindowControlsUI : null);
       if (updateWin) updateWin();
-      poll();
+      const demoLive = Caelum && Caelum.demo && Caelum.demo.mode() === 'live';
+      if (demoLive) armLiveSensors();
+      else poll();
     }
   }
 
@@ -333,7 +337,8 @@
     if (!room) { live.mode = 'sim'; renderBadge(); return; }
     const now = Date.now();
     const from = new Date(now - 2 * 3600 * 1000).toISOString();
-    const heatRoom = room.device === 'heatmap';
+    const demoLive = Caelum && Caelum.demo && Caelum.demo.mode() === 'live';
+    const heatRoom = demoLive || room.device === 'heatmap';
     try {
       // Live rooms have no server forecast (forecasting runs on the dataset rooms, /dataset/...):
       // the "now" values come from the CO2 estimate, and the future comes from the page's own engine.
@@ -383,9 +388,106 @@
     renderBadge();
   }
 
+  function queueRoomPatchFromState() {
+    if (!live.enabled) return;
+    const STATE = getState();
+    if (!STATE || !STATE.currentRoomId) return;
+    const id = STATE.currentRoomId;
+    const volume = Number(STATE.roomVolume);
+    const gen = Number(STATE.co2GenPerPerson);
+    if (!(volume >= 1 && volume <= 100000)) return;
+    const patch = { volume_m3: Math.round(volume * 10) / 10 };
+    if (gen >= 1 && gen <= 100) patch.co2_gen_lph = gen;
+    live.roomPatch[id] = { ...(live.roomPatch[id] || {}), ...patch };
+    clearTimeout(live.roomPatchTimers[id]);
+    live.roomPatchTimers[id] = setTimeout(() => {
+      const body = live.roomPatch[id];
+      delete live.roomPatch[id];
+      api(`/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body })
+        .then((room) => { live.serverRooms[id] = room; })
+        .catch((e) => showError(`Saving room failed: ${e.message}`));
+    }, 400);
+  }
+
+  function liveRatio() {
+    const el = document.getElementById('liveRatio');
+    const n = el ? Number(el.value) : 1.2;
+    return n >= 0.5 && n <= 4 ? n : 1.2;
+  }
+
+  // Point the current room at all four boards, and ask those boards to report live.
+  async function armLiveSensors() {
+    if (!live.enabled) return;
+    const Caelum = getCaelum();
+    const STATE = getState();
+    if (!Caelum || !STATE || !Caelum.demo || Caelum.demo.mode() !== 'live') return;
+    const id = STATE.currentRoomId;
+    if (live.liveDeviceRoom && live.liveDeviceRoom !== id && live.deviceBeforeLive !== undefined) {
+      try {
+        const prev = await api(`/rooms/${encodeURIComponent(live.liveDeviceRoom)}`, {
+          method: 'PUT', body: { device: live.deviceBeforeLive },
+        });
+        live.serverRooms[live.liveDeviceRoom] = prev;
+      } catch (e) { /* the room we left keeps its last device if this fails */ }
+      live.deviceBeforeLive = undefined;
+      live.liveDeviceRoom = null;
+    }
+    if (live.liveDeviceRoom !== id) {
+      const current = live.serverRooms[id];
+      live.deviceBeforeLive = current ? current.device : null;
+      live.liveDeviceRoom = id;
+    }
+    const volume = Number(STATE.roomVolume);
+    const roomBody = { device: 'heatmap' };
+    if (volume >= 1 && volume <= 100000) roomBody.volume_m3 = Math.round(volume * 10) / 10;
+    try {
+      live.serverRooms[id] = await api(`/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body: roomBody });
+      await api('/heatmap/mode', { method: 'PUT', body: { mode: 'live' } });
+      const width_m = Number(STATE.roomWidth);
+      const length_m = Number(STATE.roomLength);
+      const config = { people: { devices_per_person: liveRatio() } };
+      if (width_m >= 1 && width_m <= 100 && length_m >= 1 && length_m <= 100) {
+        config.room = { width_m, length_m };
+      }
+      live.heatmapConfig = await api('/heatmap/config', { method: 'PUT', body: config });
+    } catch (e) {
+      showError(`Saving room failed: ${e.message}`);
+    }
+    poll();
+  }
+
+  async function restoreLiveDevice() {
+    const id = live.liveDeviceRoom;
+    const device = live.deviceBeforeLive;
+    live.liveDeviceRoom = null;
+    live.deviceBeforeLive = undefined;
+    if (!live.enabled || !id || device === undefined) return;
+    try {
+      live.serverRooms[id] = await api(`/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body: { device } });
+    } catch (e) {
+      showError(`Saving room failed: ${e.message}`);
+    }
+    poll();
+  }
+
   function applyLiveState() {
+    const Caelum = getCaelum();
     const STATE = getState();
     const f = live.forecast;
+    // Live mode keeps the room size you typed. People and CO₂ come from all four boards.
+    if (Caelum && Caelum.demo && Caelum.demo.mode() === 'live') {
+      if (!STATE || !f) return;
+      const devices = live.heatmap && live.heatmap.devices_in_room;
+      const heatPeople = devices != null ? devices / liveRatio()
+        : (live.heatmap && (live.heatmap.people_smoothed != null
+          ? live.heatmap.people_smoothed : live.heatmap.people_estimate));
+      if (heatPeople != null) STATE.occupancy = Math.max(0, Math.round(heatPeople));
+      if (f.summary && f.summary.co2_now != null) STATE.co2 = f.summary.co2_now;
+      if (typeof Caelum.changed === 'function') Caelum.changed('backend');
+      const refresh = window.refreshUI || (typeof refreshUI === 'function' ? refreshUI : null);
+      if (refresh) refresh();
+      return;
+    }
     if (!STATE || !f) return;
     const room = live.serverRooms[STATE.currentRoomId];
     if (!room) return;
@@ -411,7 +513,6 @@
     if (volSlider) volSlider.value = STATE.roomVolume;
     if (volLabel) volLabel.innerText = `${STATE.roomVolume} m³`;
 
-    const Caelum = getCaelum();
     if (Caelum && typeof Caelum.changed === 'function') {
       Caelum.changed('backend');
     }
@@ -454,6 +555,30 @@
         return origWarpToggle.apply(this, args);
       };
     }
+    const origLiveToggle = Caelum.demo.liveToggle;
+    if (typeof origLiveToggle === 'function') {
+      Caelum.demo.liveToggle = function (...args) {
+        const was = Caelum.demo.mode();
+        const res = origLiveToggle.apply(this, args);
+        if (Caelum.demo.mode() === 'live') {
+          live.forceSim = false;
+          renderBadge();
+          armLiveSensors();
+        } else if (was === 'live') {
+          restoreLiveDevice();
+        }
+        return res;
+      };
+    }
+    ['setVolume', 'setGPerson', 'setRoomSize'].forEach((name) => {
+      const orig = Caelum[name];
+      if (typeof orig !== 'function') return;
+      Caelum[name] = function (...args) {
+        const res = orig.apply(this, args);
+        queueRoomPatchFromState();
+        return res;
+      };
+    });
     const origReset = Caelum.resetToBaseline;
     if (typeof origReset === 'function') {
       Caelum.resetToBaseline = function (...args) {

@@ -175,6 +175,28 @@
     }
     .btn-quiet:hover { background: #F8FAFC; }
 
+    .live-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 88px;
+      font-size: 13px;
+      color: #64748B;
+    }
+    .live-field input {
+      width: 100%;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 6px 8px;
+      color: #0F172A;
+      font-variant-numeric: tabular-nums;
+    }
+    .live-field input:focus {
+      outline: none;
+      border-color: #22C55E;
+    }
+
     .sched-buffer {
       background: var(--fresh-bg);
       border: 1px solid #86EFAC;
@@ -421,6 +443,11 @@
           <span id="guidedDemoIcon" class="text-tealOptimal font-mono-tabular">◈</span>
           <span id="guidedDemoText">Guided demo</span>
         </button>
+        <button id="liveModeBtn" type="button" title="Count people from all four boards. Shortcut: L" aria-pressed="false"
+          class="flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-xl bg-white hover:bg-[#E2E8F0] text-inkPrimary border border-borderLine transition">
+          <span class="text-tealOptimal font-mono-tabular">●</span>
+          <span id="liveModeText">Live</span>
+        </button>
         <button id="openRoomViewBtn" type="button" title="Open the room view in a new window. It stays in sync."
           class="text-sm font-medium px-3 py-2 rounded-xl bg-iceForecast/10 hover:bg-iceForecast/20 text-iceForecast border border-iceForecast/30 transition">
           Room view <span aria-hidden="true">↗</span>
@@ -457,6 +484,7 @@
             <ul class="space-y-1.5">
               <li><kbd>D</kbd> Next demo step</li>
               <li><kbd>Shift</kbd>+<kbd>D</kbd> Previous step</li>
+              <li><kbd>L</kbd> Live mode</li>
               <li><kbd>S</kbd> Play or pause the day</li>
               <li><kbd>W</kbd> Open or close windows</li>
               <li><kbd>+</kbd> / <kbd>-</kbd> People up or down</li>
@@ -484,6 +512,37 @@
         <button id="demoExitBtn" type="button"
           class="text-sm px-3 py-1.5 rounded-xl bg-white border border-borderLine text-inkSecondary hover:text-coralCrit transition ml-auto">Exit</button>
         <p id="demoCaption" class="w-full text-sm text-inkSecondary leading-snug">Caption</p>
+      </div>
+    </div>
+
+    <div id="liveBar" class="hidden border-t border-borderLine px-6 py-3">
+      <div class="max-w-[1100px] mx-auto">
+        <div class="flex flex-wrap items-end gap-x-3 gap-y-3">
+          <span class="text-sm font-medium text-tealOptimal pb-2">Live</span>
+          <label class="live-field">Width
+            <input id="liveWidth" type="number" min="1" max="100" step="0.1" inputmode="decimal" aria-label="Room width in metres, board 1 to 2">
+          </label>
+          <label class="live-field">Length
+            <input id="liveLength" type="number" min="1" max="100" step="0.1" inputmode="decimal" aria-label="Room length in metres, board 1 to 4">
+          </label>
+          <label class="live-field">Height
+            <input id="liveHeight" type="number" min="1.5" max="15" step="0.1" inputmode="decimal" aria-label="Room height in metres">
+          </label>
+          <span id="liveVolume" class="text-sm font-medium text-inkPrimary pb-2">65 m³</span>
+          <label class="live-field">Devices per person
+            <input id="liveRatio" type="number" min="0.5" max="4" step="0.1" value="1.2" inputmode="decimal" aria-label="Devices per person">
+          </label>
+          <span id="livePeopleNow" class="text-sm font-medium text-inkPrimary pb-2">Waiting for the boards</span>
+          <label class="live-field">Windows
+            <input id="liveWindows" type="number" min="1" max="8" step="1" inputmode="numeric" aria-label="Number of windows">
+          </label>
+          <label class="live-field">Open
+            <input id="liveOpen" type="number" min="0" max="8" step="1" inputmode="numeric" aria-label="Windows that are open">
+          </label>
+          <button id="liveExitBtn" type="button"
+            class="text-sm px-3 py-1.5 rounded-xl bg-white border border-borderLine text-inkSecondary hover:text-coralCrit transition ml-auto mb-0.5">Exit</button>
+        </div>
+        <p class="mt-2 text-[13px] text-inkSecondary">Width is the wall from board 1 to 2. Length is the wall from board 1 to 4. Volume is width × length × height. All four boards count the phones and laptops, and devices per person turns that into people for the map and the graph.</p>
       </div>
     </div>
 
@@ -765,7 +824,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
             <div>
               <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">Volume</span><span id="volValLabel" class="font-medium">65 m³</span></div>
-              <input type="range" id="volSlider" min="20" max="250" step="5" value="65" class="inst-slider">
+              <input type="range" id="volSlider" min="20" max="250" step="1" value="65" class="inst-slider">
             </div>
             <div>
               <div class="flex justify-between text-sm mb-1.5"><span class="text-inkSecondary">People here</span><span id="occValLabel" class="font-medium text-iceForecast">8</span></div>
@@ -1668,7 +1727,9 @@
     function heatmapLive() {
       const live = window.hackaburgerBackend;
       if (!live || !live.enabled || live.forceSim || live.mode !== 'live' || !live.heatmap) return null;
-      if (Caelum.demo.mode() !== 'none') return null;
+      const demoMode = Caelum.demo.mode();
+      if (demoMode === 'live') return live;
+      if (demoMode !== 'none') return null;
       const room = live.serverRooms && live.serverRooms[STATE.currentRoomId];
       if (!room || room.device !== 'heatmap') return null;
       return live;
@@ -2112,9 +2173,7 @@
           byId('heatStatus').textContent = 'Width and length need to be between 1 and 100 m';
           return;
         }
-        const live = liveOf();
-        if (!live) return;
-        heatRun('Saving room…', () => live.putHeatmapConfig({ room: { width_m, length_m } }));
+        commitRoomSize(width_m, length_m, STATE.roomHeight);
       };
       byId('heatWidth').addEventListener('change', sendSize);
       byId('heatLength').addEventListener('change', sendSize);
@@ -3008,8 +3067,15 @@
     function syncControlsFromState() {
       const setVal = (id, v) => { const el = byId(id); if (el && String(el.value) !== String(v)) el.value = v; };
       const setText = (id, v) => { const el = byId(id); if (el) el.innerText = v; };
+      const volSlider = byId('volSlider');
+      if (volSlider) {
+        const cap = Math.max(250, Math.ceil(STATE.roomVolume));
+        if (Number(volSlider.max) < cap) volSlider.max = String(cap);
+      }
+      const occSlider = byId('occSlider');
+      if (occSlider && Number(occSlider.max) < 200) occSlider.max = '200';
       setVal('volSlider', STATE.roomVolume);
-      setText('volValLabel', `${STATE.roomVolume} m³`);
+      setText('volValLabel', `${Math.round(STATE.roomVolume)} m³`);
       setVal('occSlider', STATE.occupancy);
       setText('occValLabel', `${STATE.occupancy} Humans`);
       setVal('genSlider', STATE.co2GenPerPerson);
@@ -3018,6 +3084,13 @@
       setText('simTimeLabel', Caelum.clockString());
       const sel = byId('roomSelector');
       if (sel && sel.value !== STATE.currentRoomId) sel.value = STATE.currentRoomId;
+      const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+      if (opt) {
+        const custom = opt.textContent.indexOf('[Custom]') !== -1;
+        const room = Caelum.getAllRooms().find((r) => r.id === STATE.currentRoomId);
+        const name = room ? room.name : opt.textContent.split('(')[0].trim();
+        opt.textContent = `${name} (${Math.round(STATE.roomVolume)} m³ · ${STATE.windows.length} Win)${custom ? ' [Custom]' : ''}`;
+      }
     }
 
     function renderDemoUi() {
@@ -3039,6 +3112,12 @@
       byId('guidedDemoText').innerText = guided ? `Step ${d.step} of ${d.total}` : 'Guided demo';
       byId('guidedDemoBtn').classList.toggle('border-tealOptimal', guided);
       byId('demoBar').classList.toggle('hidden', !guided);
+
+      const liveOn = d.mode === 'live';
+      byId('liveModeBtn').classList.toggle('border-tealOptimal', liveOn);
+      byId('liveModeBtn').setAttribute('aria-pressed', liveOn ? 'true' : 'false');
+      byId('liveBar').classList.toggle('hidden', !liveOn);
+      if (liveOn) syncLiveBar();
       if (guided) {
         byId('demoStepLabel').innerText = `Step ${d.step}/${d.total} — ${d.title}`;
         byId('demoCaption').innerText = d.caption;
@@ -3133,6 +3212,73 @@
       }
     }
 
+    function setLiveField(id, value) {
+      const el = byId(id);
+      if (!el || fieldFocused(id)) return;
+      const next = String(value);
+      if (el.value !== next) el.value = next;
+    }
+
+    function syncLiveBar() {
+      setLiveField('liveWidth', STATE.roomWidth);
+      setLiveField('liveLength', STATE.roomLength);
+      setLiveField('liveHeight', STATE.roomHeight);
+      const heat = window.hackaburgerBackend && window.hackaburgerBackend.heatmap;
+      const cfg = window.hackaburgerBackend && window.hackaburgerBackend.heatmapConfig;
+      const ratio = cfg && cfg.people ? cfg.people.devices_per_person : null;
+      if (ratio != null) setLiveField('liveRatio', ratio);
+      const now = byId('livePeopleNow');
+      if (now) {
+        const ratio = Number(byId('liveRatio').value);
+        if (heat && heat.devices_in_room != null && ratio >= 0.5) {
+          const people = Math.max(0, Math.round(heat.devices_in_room / ratio));
+          now.textContent = `${people} people · ${heat.devices_in_room} devices`;
+        } else if (heat && heat.people_smoothed != null) {
+          now.textContent = `${heat.people_smoothed} people`;
+        } else {
+          now.textContent = 'Waiting for the boards';
+        }
+      }
+      setLiveField('liveWindows', STATE.windows.length);
+      const openEl = byId('liveOpen');
+      if (openEl) openEl.max = String(STATE.windows.length);
+      setLiveField('liveOpen', STATE.openWindowCount);
+      const vol = byId('liveVolume');
+      if (vol) vol.textContent = `${Math.round(STATE.roomVolume)} m³`;
+      const heatW = byId('heatWidth');
+      const heatL = byId('heatLength');
+      if (heatW && !fieldFocused('heatWidth') && String(heatW.value) !== String(STATE.roomWidth)) heatW.value = STATE.roomWidth;
+      if (heatL && !fieldFocused('heatLength') && String(heatL.value) !== String(STATE.roomLength)) heatL.value = STATE.roomLength;
+    }
+
+    function commitRoomSize(width, length, height) {
+      Caelum.setRoomSize(width, length, height);
+      const backend = window.hackaburgerBackend;
+      if (!backend || !backend.enabled || typeof backend.putHeatmapConfig !== 'function') return;
+      const width_m = STATE.roomWidth;
+      const length_m = STATE.roomLength;
+      heatRun('Saving room…', () => backend.putHeatmapConfig({ room: { width_m, length_m } }));
+    }
+
+    function readLiveSize() {
+      const width = Number(byId('liveWidth').value);
+      const length = Number(byId('liveLength').value);
+      const height = Number(byId('liveHeight').value);
+      if (!(width >= 1 && width <= 100 && length >= 1 && length <= 100 && height >= 1.5 && height <= 15)) {
+        syncLiveBar();
+        return;
+      }
+      commitRoomSize(width, length, height);
+    }
+
+    function adoptHeatmapSize() {
+      const backend = window.hackaburgerBackend;
+      const room = backend && backend.serverRooms && backend.serverRooms[STATE.currentRoomId];
+      const cfg = backend && backend.heatmapConfig && backend.heatmapConfig.room;
+      if (!room || room.device !== 'heatmap' || !cfg) return;
+      commitRoomSize(cfg.width_m, cfg.length_m, STATE.roomHeight);
+    }
+
     function openRoomView() {
       const w = window.open('index.html', 'caelum-room', 'popup=yes,width=1280,height=860');
       if (!w) window.open('index.html', '_blank');
@@ -3162,6 +3308,40 @@
       byId('guidedDemoBtn').addEventListener('click', () => {
         if (Caelum.demo.mode() === 'guided') Caelum.demo.guidedExit();
         else Caelum.demo.guidedStart();
+      });
+      byId('liveModeBtn').addEventListener('click', () => {
+        const entering = Caelum.demo.mode() !== 'live';
+        Caelum.demo.liveToggle();
+        if (entering && Caelum.demo.mode() === 'live') adoptHeatmapSize();
+      });
+      byId('liveExitBtn').addEventListener('click', () => Caelum.demo.liveExit());
+      ['liveWidth', 'liveLength', 'liveHeight'].forEach((id) => {
+        byId(id).addEventListener('change', readLiveSize);
+      });
+      byId('liveRatio').addEventListener('change', () => {
+        const devices_per_person = Number(byId('liveRatio').value);
+        if (!(devices_per_person >= 0.5 && devices_per_person <= 4)) {
+          syncLiveBar();
+          return;
+        }
+        const dpp = byId('heatDpp');
+        if (dpp && !fieldFocused('heatDpp')) dpp.value = devices_per_person;
+        const backend = window.hackaburgerBackend;
+        const devices = backend && backend.heatmap && backend.heatmap.devices_in_room;
+        if (devices != null) Caelum.setOccupancy(Math.max(0, Math.round(devices / devices_per_person)));
+        syncLiveBar();
+        if (!backend || !backend.enabled || typeof backend.putHeatmapConfig !== 'function') return;
+        heatRun('Saving…', () => backend.putHeatmapConfig({ people: { devices_per_person } }));
+      });
+      byId('liveWindows').addEventListener('change', () => {
+        const n = Number(byId('liveWindows').value);
+        if (n >= 1 && n <= 8) Caelum.setWindowCount(n);
+        else syncLiveBar();
+      });
+      byId('liveOpen').addEventListener('change', () => {
+        const n = Number(byId('liveOpen').value);
+        if (n >= 0 && n <= STATE.windows.length) Caelum.setOpenWindowsCount(n);
+        else syncLiveBar();
       });
       byId('resetSimBtn').addEventListener('click', () => Caelum.resetToBaseline());
       byId('resetParamsBtn').addEventListener('click', () => Caelum.resetToBaseline());
@@ -3314,7 +3494,7 @@
             closeArduinoAdminModal();
             return;
           }
-          Caelum.demo.exit();               // guided -> exit, 8-hour sim -> pause
+          Caelum.demo.exit();               // guided -> exit, live -> exit, 8-hour sim -> pause
           return;
         }
 
@@ -3325,7 +3505,12 @@
         if (isOpen('addRoomModal') || isOpen('arduinoAdminModal')) return;
 
         const k = e.key;
-        if (k === 'd' || k === 'D') {
+        if (k === 'l' || k === 'L') {
+          e.preventDefault();
+          const entering = Caelum.demo.mode() !== 'live';
+          Caelum.demo.liveToggle();
+          if (entering && Caelum.demo.mode() === 'live') adoptHeatmapSize();
+        } else if (k === 'd' || k === 'D') {
           e.preventDefault();
           if (e.shiftKey) Caelum.demo.guidedPrev();
           else Caelum.demo.guidedNext();   // starts the demo if it is not running

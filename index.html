@@ -128,6 +128,8 @@
     .demo-strip {
       border-bottom: 1px solid var(--sky-bg); background: var(--sky-bg); color: var(--sky-ink);
     }
+    .demo-strip.is-live { background: #F1F5F9; color: var(--ink); border-bottom-color: var(--line); }
+    .demo-strip.is-live .demo-tag { color: var(--ink); }
     .demo-strip[hidden] { display: none; }
     .demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding-top: 8px; padding-bottom: 8px; font-size: 14px; }
     .demo-tag { font: 600 11px/1 var(--font-mono); letter-spacing: .06em; padding: 5px 8px; border-radius: 6px; background: #fff; color: var(--sky-ink); }
@@ -572,20 +574,27 @@
     }
     function renderDemo(d) {
       var strip = $('demoStrip');
+      var dots = $('demoDots');
+      strip.classList.toggle('is-live', d.mode === 'live');
       if (d.mode === 'guided' && d.step > 0) {
         strip.hidden = false;
+        dots.hidden = false;
         $('demoTag').textContent = 'STEP ' + d.step + '/' + d.total;
         $('demoCap').textContent = d.caption;
-        var dots = $('demoDots').children;
-        for (var i = 0; i < dots.length; i++) {
-          dots[i].className = (i + 1 === d.step) ? 'on' : (i + 1 < d.step ? 'done' : '');
+        var marks = dots.children;
+        for (var i = 0; i < marks.length; i++) {
+          marks[i].className = (i + 1 === d.step) ? 'on' : (i + 1 < d.step ? 'done' : '');
         }
       } else if (d.mode === 'warp') {
         strip.hidden = false;
+        dots.hidden = true;
         $('demoTag').textContent = 'DAY SIM';
         $('demoCap').textContent = d.caption || 'Fast-forwarding a working day';
-        var dots2 = $('demoDots').children;
-        for (var j = 0; j < dots2.length; j++) dots2[j].className = '';
+      } else if (d.mode === 'live') {
+        strip.hidden = false;
+        dots.hidden = true;
+        $('demoTag').textContent = 'LIVE';
+        $('demoCap').textContent = d.caption || 'Room size, people, and windows are set on the admin console';
       } else {
         strip.hidden = true;
       }

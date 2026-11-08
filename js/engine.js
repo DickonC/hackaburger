@@ -34,6 +34,9 @@
       name: "Appleton Tower — Study Pod 4.02",
       shortName: "Study Pod 4.02",
       volume: 65.0,
+      width: 5.0,            // m, wall from board 1 to board 2
+      length: 5.2,           // m, wall from board 1 to board 4
+      height: 2.5,
       occupancy: 8,
       scheduledCount: 12,
       capacity: 12,
@@ -49,6 +52,9 @@
       name: "Informatics Forum — Meeting Room 2.14",
       shortName: "Meeting Room 2.14",
       volume: 140.0,
+      width: 8.0,
+      length: 7.0,
+      height: 2.5,
       occupancy: 15,
       scheduledCount: 20,
       capacity: 20,
@@ -66,6 +72,9 @@
       name: "Personal Study Mode — Dorm / Bedroom",
       shortName: "Personal Study",
       volume: 32.0,
+      width: 4.0,
+      length: 3.2,
+      height: 2.5,
       occupancy: 1,
       scheduledCount: 1,
       capacity: 2,
@@ -117,13 +126,57 @@
     return Math.max(2, Math.round((room.volume || 60) / 5.5), room.scheduledCount || 0);
   }
 
+  function round1(n) {
+    return Math.round(n * 10) / 10;
+  }
+
+  function deriveSize(volume) {
+    var height = 2.5;
+    var footprint = Math.max(1, (volume || 65) / height);
+    var width = Math.sqrt(footprint * 1.25);
+    var length = footprint / width;
+    return { width: round1(width), length: round1(length), height: height };
+  }
+
+  var ROOM_SIZES_KEY = 'caelum_room_sizes';
+  function loadRoomSizes() {
+    try {
+      var raw = lsGet(ROOM_SIZES_KEY);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) { return {}; }
+  }
+  function persistRoomSizes() {
+    lsSet(ROOM_SIZES_KEY, JSON.stringify(roomSizes));
+  }
+  var roomSizes = loadRoomSizes();
+  var baseSizes = {};
+  DEFAULT_ROOMS.forEach(function (r) {
+    baseSizes[r.id] = { width: r.width, length: r.length, height: r.height, volume: r.volume };
+  });
+
+  function sizeForRoom(room) {
+    if (room && roomSizes[room.id]) return roomSizes[room.id];
+    if (room && isFinite(room.width) && isFinite(room.length) && isFinite(room.height)) {
+      return { width: +room.width, length: +room.length, height: +room.height };
+    }
+    if (room && baseSizes[room.id]) {
+      return { width: baseSizes[room.id].width, length: baseSizes[room.id].length, height: baseSizes[room.id].height };
+    }
+    return deriveSize(room && room.volume);
+  }
+
   /* =====================================================================
      1. CORE SYSTEM STATE (identical shape to the original dashboard)
      ===================================================================== */
   var STATE = {
     currentRoomId: "appleton",
     roomName: DEFAULT_ROOMS[0].name,
-    roomVolume: 65.0,          // V in m³
+    roomVolume: 65.0,          // V in m³ (width × length × height)
+    roomWidth: 5.0,            // m, wall from board 1 to board 2
+    roomLength: 5.2,           // m, wall from board 1 to board 4
+    roomHeight: 2.5,           // m
     capacity: 12,              // seats (for the room-view crowd gauge)
     occupancy: 8,              // N(t) live filtered BLE humans
     scheduledCount: 12,        // Room calendar scheduled headcount
@@ -191,6 +244,15 @@
     isTimeWarpRunning: false,
     warpTimer: null
   };
+
+  (function applyStoredSize() {
+    var boot = roomSizes[STATE.currentRoomId];
+    if (!boot || !isFinite(boot.width) || !isFinite(boot.length) || !isFinite(boot.height)) return;
+    STATE.roomWidth = round1(boot.width);
+    STATE.roomLength = round1(boot.length);
+    STATE.roomHeight = round1(boot.height);
+    STATE.roomVolume = round1(STATE.roomWidth * STATE.roomLength * STATE.roomHeight);
+  })();
 
   // Flush stopwatch. Measured in SIM seconds so it agrees with the model clock.
   var FLUSH = { running: false, elapsedSec: 0, startCo2: 1280, last: null };
@@ -556,6 +618,9 @@
       roomName: STATE.roomName,
       rooms: roomList(),
       roomVolume: STATE.roomVolume,
+      roomWidth: STATE.roomWidth,
+      roomLength: STATE.roomLength,
+      roomHeight: STATE.roomHeight,
       capacity: STATE.capacity,
       occupancy: STATE.occupancy,
       scheduledCount: STATE.scheduledCount,
@@ -580,6 +645,16 @@
     STATE.currentRoomId = s.roomId;
     STATE.roomName = s.roomName;
     STATE.roomVolume = s.roomVolume;
+    if (isFinite(s.roomWidth) && isFinite(s.roomLength) && isFinite(s.roomHeight)) {
+      STATE.roomWidth = s.roomWidth;
+      STATE.roomLength = s.roomLength;
+      STATE.roomHeight = s.roomHeight;
+    } else {
+      var derived = deriveSize(s.roomVolume);
+      STATE.roomWidth = derived.width;
+      STATE.roomLength = derived.length;
+      STATE.roomHeight = derived.height;
+    }
     STATE.capacity = s.capacity;
     STATE.occupancy = s.occupancy;
     STATE.scheduledCount = s.scheduledCount;
@@ -675,6 +750,9 @@
     var idx = customs.findIndex(function (r) { return r.id === STATE.currentRoomId; });
     if (idx !== -1) {
       customs[idx].volume = STATE.roomVolume;
+      customs[idx].width = STATE.roomWidth;
+      customs[idx].length = STATE.roomLength;
+      customs[idx].height = STATE.roomHeight;
       customs[idx].occupancy = STATE.occupancy;
       customs[idx].scheduledCount = STATE.scheduledCount;
       customs[idx].windows = JSON.parse(JSON.stringify(STATE.windows));
@@ -683,10 +761,42 @@
     }
   }
 
+  function rememberSize(id) {
+    var size = { width: STATE.roomWidth, length: STATE.roomLength, height: STATE.roomHeight };
+    roomSizes[id] = size;
+    persistRoomSizes();
+    var room = getAllRooms().find(function (r) { return r.id === id; });
+    if (room) {
+      room.width = size.width;
+      room.length = size.length;
+      room.height = size.height;
+      room.volume = STATE.roomVolume;
+    }
+  }
+
+  function restoreBaseSize(id) {
+    delete roomSizes[id];
+    persistRoomSizes();
+    var base = baseSizes[id];
+    var room = getAllRooms().find(function (r) { return r.id === id; });
+    if (room && base) {
+      room.width = base.width;
+      room.length = base.length;
+      room.height = base.height;
+      room.volume = base.volume;
+    }
+  }
+
   function applyRoomToState(room) {
+    var size = sizeForRoom(room);
     STATE.currentRoomId = room.id;
     STATE.roomName = room.name;
-    STATE.roomVolume = room.volume;
+    STATE.roomWidth = size.width;
+    STATE.roomLength = size.length;
+    STATE.roomHeight = size.height;
+    STATE.roomVolume = roomSizes[room.id]
+      ? round1(size.width * size.length * size.height)
+      : room.volume;
     STATE.capacity = roomCapacity(room);
     STATE.occupancy = room.occupancy;
     STATE.scheduledCount = room.scheduledCount || Math.round(room.occupancy * 1.3);
@@ -748,8 +858,33 @@
     emit('param');
   }
 
+  function clampNum(v, lo, hi, fallback) {
+    var n = parseFloat(v);
+    if (!isFinite(n)) n = fallback;
+    return Math.min(hi, Math.max(lo, n));
+  }
+
   function setVolume(v) {
-    STATE.roomVolume = parseFloat(v);
+    var vol = parseFloat(v);
+    if (!isFinite(vol)) return;
+    var foot = STATE.roomWidth * STATE.roomLength;
+    if (foot > 0) {
+      STATE.roomHeight = round1(clampNum(vol / foot, 1.5, 15, STATE.roomHeight));
+      STATE.roomVolume = round1(STATE.roomWidth * STATE.roomLength * STATE.roomHeight);
+    } else {
+      STATE.roomVolume = Math.max(1, vol);
+    }
+    rememberSize(STATE.currentRoomId);
+    saveCurrentRoomChangesIfCustom();
+    emit('param');
+  }
+
+  function setRoomSize(width, length, height) {
+    STATE.roomWidth = round1(clampNum(width, 1, 100, STATE.roomWidth));
+    STATE.roomLength = round1(clampNum(length, 1, 100, STATE.roomLength));
+    STATE.roomHeight = round1(clampNum(height, 1.5, 15, STATE.roomHeight));
+    STATE.roomVolume = round1(STATE.roomWidth * STATE.roomLength * STATE.roomHeight);
+    rememberSize(STATE.currentRoomId);
     saveCurrentRoomChangesIfCustom();
     emit('param');
   }
@@ -761,7 +896,10 @@
 
   function resetToBaseline() {
     stopWarpInternal('idle');
+    var keepLive = demoMode === 'live';
     if (demoMode === 'guided') exitGuidedInternal(true);   // back to the pre-demo room first
+    if (keepLive) demoMode = 'live';
+    restoreBaseSize(STATE.currentRoomId);
     var all = getAllRooms();
     var currentRoom = all.find(function (r) { return r.id === STATE.currentRoomId; }) || DEFAULT_ROOMS[0];
     applyRoomToState(currentRoom);
@@ -781,7 +919,9 @@
      ===================================================================== */
   // Advance the model by `minutes` sim-minutes (windows/occupancy as-is).
   function advanceModel(minutes) {
-    if (root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim') {
+    // While the boards are connected, CO₂ comes from their people count.
+    var backendOwnsCo2 = root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim';
+    if (backendOwnsCo2) {
       STATE.simMinutesFrom9AM += minutes;
       if (FLUSH.running) FLUSH.elapsedSec += minutes * 60;
       return;
@@ -825,7 +965,7 @@
   /* =====================================================================
      8. DEMO MODE A: 8-HOUR DAY TIME-WARP (+5 sim-min every 130 ms)
      ===================================================================== */
-  var demoMode = 'none';      // 'none' | 'warp' | 'guided'
+  var demoMode = 'none';      // 'none' | 'live' | 'warp' | 'guided'
   var warpPhase = 'idle';     // 'idle' | 'running' | 'paused' | 'done'
 
   function warpStep() {
@@ -999,8 +1139,22 @@
       }
     } else if (demoMode === 'warp') {
       d.caption = 'Day simulation (fast-forward): ' + clockString().slice(0, 5);
+    } else if (demoMode === 'live') {
+      d.caption = metres(STATE.roomWidth) + ' m wide · ' + metres(STATE.roomLength) + ' m long · ' +
+        metres(STATE.roomHeight) + ' m high · ' + Math.round(STATE.roomVolume) + ' m³';
+      d.room = {
+        width: STATE.roomWidth,
+        length: STATE.roomLength,
+        height: STATE.roomHeight,
+        volume: STATE.roomVolume
+      };
     }
     return d;
+  }
+
+  function metres(n) {
+    var x = round1(n);
+    return Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1);
   }
 
   function clearGuidedTimers() {
@@ -1151,10 +1305,35 @@
     emit('reseed');
   }
 
-  // Esc: leave whichever demo is active (guided -> exit, warp -> pause)
+  /* =====================================================================
+     9b. LIVE MODE: choose the room, its size, people, and windows
+     ===================================================================== */
+  function startLive() {
+    if (demoMode === 'live') return;
+    if (STATE.isTimeWarpRunning) stopWarpInternal('idle');
+    if (demoMode === 'guided') exitGuidedInternal(true);
+    demoMode = 'live';
+    refreshTicker();
+    emit('live-start');
+  }
+
+  function exitLive() {
+    if (demoMode !== 'live') return;
+    demoMode = 'none';
+    refreshTicker();
+    emit('live-exit');
+  }
+
+  function toggleLive() {
+    if (demoMode === 'live') exitLive();
+    else startLive();
+  }
+
+  // Esc: leave whichever demo is active (guided -> exit, warp -> pause, live -> exit)
   function exitDemos() {
     if (demoMode === 'guided') guidedExit();
     else if (STATE.isTimeWarpRunning) toggleWarp();
+    else if (demoMode === 'live') exitLive();
   }
 
   /* =====================================================================
@@ -1256,6 +1435,7 @@
     setWindowCount: setWindowCount,
     setOccupancy: setOccupancy,
     setVolume: setVolume,
+    setRoomSize: setRoomSize,
     setGPerson: setGPerson,
     resetToBaseline: resetToBaseline,
     saveCurrentRoomChangesIfCustom: saveCurrentRoomChangesIfCustom,
@@ -1270,6 +1450,9 @@
       get: function () { return demoPublic(); },
       getRemote: function () { return remoteDemo || demoPublic(); },
       mode: function () { return demoMode; },
+      liveToggle: toggleLive,
+      liveStart: startLive,
+      liveExit: exitLive,
       warpToggle: toggleWarp,
       guidedStart: guidedStart,
       guidedNext: guidedNext,

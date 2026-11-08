@@ -324,8 +324,8 @@ def test_privacy_prune(client):
     from app.core import db
     old = time.time() - 2 * 86400
     with db() as conn:
-        conn.execute("INSERT INTO heatmap_devices VALUES (?, 'old-id', '{}', 4, -60, 1, 1, 1, 'in_room', NULL, NULL)",
-                     (old,))
+        conn.execute("INSERT INTO heatmap_devices (ts, id, rssi, boards_heard, weakest_dbm, x, y, pass_edge, status, "
+                     "reason, kind) VALUES (?, 'old-id', '{}', 4, -60, 1, 1, 1, 'in_room', NULL, NULL)", (old,))
         conn.execute("INSERT INTO heatmap_tracks VALUES ('old-id', ?, ?)", (old, old))
         conn.execute("INSERT INTO readings (device, device_ts, received_at, data, measured_at, rssis) "
                      "VALUES ('uno-q-9', NULL, ?, ?, ?, '[-60]')", (iso(old), '{"devices": [{"id": "x", "rssi": -60, "n": 1}]}', old))

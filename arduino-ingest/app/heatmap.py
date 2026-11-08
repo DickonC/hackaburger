@@ -8,7 +8,10 @@ boards have sent, or WAIT_S after the first one did:
 2. in-room filter: not an obvious non-person (kind in exclude_kinds, or the same id seen
    continuously for stationary_h hours), heard by >= min_boards, weakest signal >= edge_dbm,
    and present for presence_s (the first failing check is the device's `reason`);
-3. position = signal-weighted centre of the board positions;
+   With filter.edge_rule "second_weakest" the second-weakest signal must reach the edge instead
+   (and the weakest may be weakest_slack_db below it); docs/heatmap-fit-brief.md;
+3. position = signal-weighted centre of the board positions, or with position.method "fit" a
+   path-loss fit over a grid of the room (probability-weighted mean; never used to reject);
 4. people_estimate = in-room devices / devices_per_person; heatmap = a Gaussian per device
    (scaled to people), smoothed per cell over time.
 
@@ -55,10 +58,11 @@ DEFAULT_CONFIG = {
     "room": {"width_m": 8.0, "length_m": 6.0, "board_inset_m": 0.5},
     "boards": {f"uno-q-{i + 1}": {"corner": c} for i, c in enumerate(CORNERS)},
     "filter": {"exclude_kinds": NOT_PEOPLE, "stationary_h": 2.0, "edge_mode": "auto", "edge_dbm": -85.0,
-               "edge_margin_db": 4.0, "min_boards": 3, "presence_s": 30},
+               "edge_margin_db": 4.0, "min_boards": 3, "presence_s": 30,
+               "edge_rule": "weakest", "weakest_slack_db": 8.0},
     "offsets_mode": "auto",
     "offsets_db": {f"uno-q-{i + 1}": 0.0 for i in range(4)},
-    "position": {"weight_k": 2.0},
+    "position": {"weight_k": 2.0, "method": "weighted", "path_loss_n": 2.5, "fit_cell_m": 0.25, "noise_db": 3.5},
     "heatmap": {"cell_m": 0.5, "sigma_m": 1.0, "smoothing_s": 60},
     "people": {"devices_per_person": 1.2},
 }
@@ -67,8 +71,10 @@ FIELDS = {
     "room": {"width_m": (float, 1, 100), "length_m": (float, 1, 100), "board_inset_m": (float, 0, 3)},
     "filter": {"exclude_kinds": ("kinds",), "stationary_h": (float, 0, 48),
                "edge_mode": ("mode",), "edge_dbm": (float, -100, -40), "edge_margin_db": (float, 0, 15),
-               "min_boards": (int, 2, 4), "presence_s": (int, 0, 600)},
-    "position": {"weight_k": (float, 0.5, 5)},
+               "min_boards": (int, 2, 4), "presence_s": (int, 0, 600),
+               "edge_rule": ("choice", "weakest", "second_weakest"), "weakest_slack_db": (float, 0, 20)},
+    "position": {"weight_k": (float, 0.5, 5), "method": ("choice", "weighted", "fit"),
+                 "path_loss_n": (float, 1.5, 4.0), "fit_cell_m": (float, 0.1, 1.0), "noise_db": (float, 1, 10)},
     "heatmap": {"cell_m": (float, 0.25, 2), "sigma_m": (float, 0.25, 5), "smoothing_s": (int, 0, 600)},
     "people": {"devices_per_person": (float, 0.5, 4)},
 }
@@ -120,7 +126,8 @@ def migrate(conn: sqlite3.Connection):
             last_ts REAL NOT NULL
         )"""
     )
-    for table, col in (("heatmap_devices", "kind TEXT"), ("heatmap_snapshots", "kinds TEXT")):
+    for table, col in (("heatmap_devices", "kind TEXT"), ("heatmap_snapshots", "kinds TEXT"),
+                       ("heatmap_devices", "second_weakest_dbm REAL"), ("heatmap_devices", "fit_rms_db REAL")):
         if col.split()[0] not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
 
@@ -163,9 +170,16 @@ def board_positions(cfg: dict) -> dict[str, tuple[float, float]]:
 
 
 def auto_edge(cfg: dict) -> float:
-    """The weakest RSSI a phone inside the room should produce, minus a margin (path-loss model)."""
-    pos = list(board_positions(cfg).values())
-    d_max = max((math.dist(a, b) for i, a in enumerate(pos) for b in pos[i + 1:]), default=1.0)
+    """The weakest RSSI a phone inside the room should produce, minus a margin (path-loss model).
+
+    Rule "weakest": the farthest board is across the diagonal (longest board-to-board distance).
+    Rule "second_weakest": the second-farthest board is at most the longer room side away.
+    """
+    if cfg["filter"].get("edge_rule") == "second_weakest":
+        d_max = max(cfg["room"]["width_m"], cfg["room"]["length_m"])
+    else:
+        pos = list(board_positions(cfg).values())
+        d_max = max((math.dist(a, b) for i, a in enumerate(pos) for b in pos[i + 1:]), default=1.0)
     rssi_far = RSSI_1M - 10 * PATH_LOSS_N * math.log10(max(d_max, 1.0))
     return float(min(-60, max(-100, round(rssi_far - cfg["filter"]["edge_margin_db"]))))
 
@@ -237,6 +251,10 @@ def check_value(name: str, v: Any, spec: tuple):
         if v not in ("auto", "manual"):
             raise HTTPException(422, f"{name} must be 'auto' or 'manual'")
         return v
+    if spec[0] == "choice":
+        if v not in spec[1:]:
+            raise HTTPException(422, f"{name} must be one of {list(spec[1:])}")
+        return v
     kind, lo, hi = spec
     if kind is int and (isinstance(v, bool) or not isinstance(v, int)):
         raise HTTPException(422, f"{name} must be an integer")
@@ -295,6 +313,45 @@ def gaussian_grid(cfg: dict, points: list[tuple[float, float]]) -> np.ndarray:
     return grid
 
 
+class PositionFit:
+    """Path-loss position fit (docs/heatmap-fit-brief.md, feature B), precomputed once per snapshot.
+
+    adj[b] ~ P0 - 10 n log10(max(dist(p, board_b), 0.5)) with the phone power P0 unknown and fitted
+    per cell, so only the differences between boards decide the position.
+    """
+
+    def __init__(self, cfg: dict, pos: dict[str, tuple[float, float]]):
+        p = cfg["position"]
+        cell, n = p["fit_cell_m"], p["path_loss_n"]
+        w, l = cfg["room"]["width_m"], cfg["room"]["length_m"]
+        xs = np.arange(cell / 2, w, cell)
+        ys = np.arange(cell / 2, l, cell)
+        gx, gy = np.meshgrid(xs, ys)
+        self.cells = np.column_stack([gx.ravel(), gy.ravel()])            # [cells, 2]
+        self.boards = list(pos)
+        bxy = np.array([pos[b] for b in self.boards])                    # [boards, 2]
+        dist = np.linalg.norm(self.cells[:, None, :] - bxy[None, :, :], axis=2)
+        self.R = -10 * n * np.log10(np.maximum(dist, 0.5))               # [cells, boards]
+        self.two_sigma2 = 2 * p["noise_db"] ** 2
+
+    def locate(self, adj: dict[str, float]) -> tuple[float, float, float] | None:
+        """(x, y, fit_rms_db) for a device heard by >= 3 boards, or None if no cell is plausible."""
+        idx = [self.boards.index(b) for b in adj if b in self.boards]
+        if len(idx) < 3:
+            return None
+        a = np.array([adj[self.boards[i]] for i in idx])                 # [H]
+        resid = a[None, :] - self.R[:, idx]                              # [cells, H]
+        p0 = resid.mean(axis=1)                                          # best phone power per cell
+        err = ((resid - p0[:, None]) ** 2).sum(axis=1)                   # dB^2 misfit
+        err[(p0 < -80) | (p0 > -30)] = np.inf                            # implausible phone power
+        best = err.min()
+        if not np.isfinite(best):
+            return None
+        like = np.exp(-(err - best) / self.two_sigma2)
+        xy = (like[:, None] * self.cells).sum(axis=0) / like.sum()
+        return float(xy[0]), float(xy[1]), math.sqrt(best / len(idx))
+
+
 def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
     boards = list(cfg["boards"])
     pos = board_positions(cfg)
@@ -304,6 +361,9 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
     exclude, stationary_s = set(f["exclude_kinds"]), f["stationary_h"] * 3600
     k = cfg["position"]["weight_k"]
     w, l = cfg["room"]["width_m"], cfg["room"]["length_m"]
+    second_rule = f.get("edge_rule") == "second_weakest"
+    slack = f.get("weakest_slack_db", 8.0)
+    fit = PositionFit(cfg, pos) if cfg["position"].get("method") == "fit" else None
     bc = get_config(conn, boards[0])
     interval = bc["interval_s"]
     needed = math.ceil(presence_s / interval) if presence_s else 0
@@ -324,9 +384,15 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
         board_kinds = [v[1] for v in seen.values()]
         kind = device_kind(board_kinds)
         adj = {b: v + offsets.get(b, 0.0) for b, v in rssi.items() if v is not None}
-        weakest = min(adj.values())
-        x = y = None
-        if len(adj) >= 2:
+        ordered = sorted(adj.values())
+        weakest = ordered[0]
+        second = ordered[1] if len(ordered) >= 2 else None
+        x = y = fit_rms = None
+        located = fit.locate(adj) if fit is not None and len(adj) >= 3 else None
+        if located is not None:
+            x, y, fit_rms = located
+            x, y = min(w, max(0.0, x)), min(l, max(0.0, y))
+        elif len(adj) >= 2:
             wts = {b: 10 ** (v / (10 * k)) for b, v in adj.items()}
             total = sum(wts.values())
             x = min(w, max(0.0, sum(wts[b] * pos[b][0] for b in wts) / total))
@@ -342,7 +408,8 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
         else:
             funnel["plausible_people"] += 1
             funnel["enough_boards"] += 1
-            if weakest < edge:
+            inside = (second >= edge and weakest >= edge - slack) if second_rule else weakest >= edge
+            if not inside:
                 reason = "outside_edge"
             else:
                 funnel["inside_edge"] += 1
@@ -356,9 +423,12 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
             kinds_in_room[kind] = kinds_in_room.get(kind, 0) + 1
         rows.append((ts, dev_id, json.dumps(rssi), len(adj), round(weakest, 1),
                      None if x is None else round(x, 2), None if y is None else round(y, 2),
-                     int(pass_edge), "in_room" if reason is None else "rejected", reason, kind))
+                     int(pass_edge), "in_room" if reason is None else "rejected", reason, kind,
+                     None if second is None else round(second, 1),
+                     None if fit_rms is None else round(fit_rms, 2)))
     conn.executemany("INSERT OR REPLACE INTO heatmap_devices (ts, id, rssi, boards_heard, weakest_dbm, x, y, "
-                     "pass_edge, status, reason, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+                     "pass_edge, status, reason, kind, second_weakest_dbm, fit_rms_db) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
     dpp = cfg["people"]["devices_per_person"]
     grid = gaussian_grid(cfg, in_room_xy)
@@ -372,7 +442,8 @@ def build_snapshot(conn: sqlite3.Connection, ts: float, cfg: dict, now: float):
             smoothed = alpha * grid + (1 - alpha) * old
     board_stats = {b: {"message": b in heard, "heard": len(heard.get(b, {}))} for b in boards}
     used = {"edge_dbm": edge, "min_boards": min_boards, "presence_s": presence_s, "offsets_db": offsets,
-            "exclude_kinds": sorted(exclude, key=KINDS.index), "stationary_h": f["stationary_h"]}
+            "exclude_kinds": sorted(exclude, key=KINDS.index), "stationary_h": f["stationary_h"],
+            "edge_rule": f.get("edge_rule", "weakest"), "position_method": cfg["position"].get("method", "weighted")}
     kinds_sorted = dict(sorted(kinds_in_room.items(), key=lambda kv: -kv[1]))
     conn.execute("INSERT OR REPLACE INTO heatmap_snapshots (ts, computed_at, people_estimate, devices_in_room, "
                  "devices_heard, funnel, boards, filter, grid, grid_raw_sum, kinds) "
@@ -592,7 +663,8 @@ def latest():
         warnings.append("waiting for boards to apply new settings: "
                         + ", ".join(b for b, s in boards.items() if s["config"]["pending"]))
     calibration = {"edge_mode": cfg["filter"]["edge_mode"], "edge_dbm": cfg["filter"]["edge_dbm"],
-                   "offsets_mode": cfg["offsets_mode"], "offsets_db": cfg["offsets_db"]}
+                   "offsets_mode": cfg["offsets_mode"], "offsets_db": cfg["offsets_db"],
+                   "edge_rule": cfg["filter"]["edge_rule"], "position_method": cfg["position"]["method"]}
     room = {"width_m": cfg["room"]["width_m"], "length_m": cfg["room"]["length_m"]}
     if not snap:
         warnings.append("no snapshot yet: waiting for board data")
@@ -642,10 +714,13 @@ def debug(ts: str | None = Query(default=None, description="a snapshot ts (defau
             "filter": {k: used[k] for k in ("exclude_kinds", "stationary_h", "edge_dbm", "min_boards", "presence_s")
                        if k in used},
             "offsets_db": used["offsets_db"],
+            "edge_rule": used.get("edge_rule", "weakest"),
+            "position_method": used.get("position_method", "weighted"),
             "devices": [{"id": r["id"], "rssi": json.loads(r["rssi"]), "weakest_dbm": r["weakest_dbm"],
+                         "second_weakest_dbm": r["second_weakest_dbm"],
                          "boards_heard": r["boards_heard"], "x": r["x"], "y": r["y"], "kind": r["kind"] or "unknown",
-                         "status": r["status"],
-                         "reason": r["reason"]} for r in rows]}
+                         "status": r["status"], "reason": r["reason"],
+                         "fit_rms_db": r["fit_rms_db"]} for r in rows]}
 
 
 @router.get("/history")

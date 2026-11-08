@@ -18,7 +18,7 @@
   'use strict';
 
   var CHANNEL_NAME = 'caelum';
-  var TICK_MS = 2000;            // background tick: 1 sim-minute per 2 s real time
+  var TICK_MS = 2000;            // background tick every 2 s (real time; paused 8-hour day: 1 sim-minute)
   var FLUSH_TARGET_PPM = 800;    // "recovered" level used to size a window flush
   var STUFFY_PPM = 1000;         // threshold used for the countdown / alerts
   var GUIDED_ROOM_ID = 'forum';  // guided demo runs in the meeting room preset
@@ -259,7 +259,7 @@
     // Dynamic Telemetry
     co2: 1280.0,
     rateOfChange: 16.4,
-    simMinutesFrom9AM: 315,    // 14:15:00 (sim clock, minutes since 09:00)
+    simMinutesFrom9AM: 315,    // minutes since 09:00; set to the real time on init (demos use their own clock)
     isTimeWarpRunning: false,
     warpTimer: null
   };
@@ -328,6 +328,9 @@
       Math.round(cNow * 0.95),
       cNow
     ];
+    // Real-time sample room: the last 2 hours as they happened
+    var day = daySeries([-120, -105, -90, -75, -60, -45, -30, -15, 0]);
+    if (day && day.co2.every(function (v) { return v != null; })) past = day.co2;
 
     var dtSteps = [0.25, 0.25, 0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 1.0];
     var noIntervention = [cNow];
@@ -446,7 +449,9 @@
   /* =====================================================================
      2B. SCHEDULE (shared by both views) + SCHEDULE-AWARE FORECAST
      ===================================================================== */
-  var SCHEDULE = [
+  // Fixed 13:00–16:30 calendar used only by the 8-hour and guided demos
+  // (their scripts and captions depend on these exact times).
+  var DEMO_SCHEDULE = [
     {
       id: 'b1', type: 'booking', start: 13 * 60, end: 14 * 60,
       title: 'Quantitative Strategy Sync', scheduled: 10, expected: 7
@@ -461,14 +466,195 @@
     }
   ];
 
+  /* =====================================================================
+     2C. TYPICAL WEEKDAY for the sample rooms (normal mode, real clock)
+     ---------------------------------------------------------------------
+     Outside the demos the clock is the real time of day and each sample
+     room follows a typical weekday: bookings (with no-shows and one ghost
+     booking), drop-ins between bookings, and Caelum's 10-min fresh-air
+     breaks. Weekends use the same weekday plan, labelled "Sample weekday",
+     because an empty Sunday office shows nothing. The Live Room has no
+     plan: its people come from the boards.
+     ===================================================================== */
+  function hm(h, m) { return h * 60 + (m || 0); }
+  function booking(start, end, title, scheduled, expected) {
+    return { type: 'booking', start: start, end: end, title: title, scheduled: scheduled, expected: expected };
+  }
+  function flushBreak(start) {
+    return { type: 'buffer', start: start, end: start + 10, title: '[AUTO-BUFFER] 10 min room air flush', windows: 2 };
+  }
+  function withIds(roomId, events) {
+    return events.map(function (e, i) { e.id = roomId + '-' + i; return e; });
+  }
+
+  // background: [startMin, endMin, people] for time outside bookings.
+  // emptyAch: air changes/h while the room is empty (door left open).
+  var DAY_PLANS = {
+    // Meeting room, 20 seats, 140 m³: typical office meeting day.
+    forum: {
+      emptyAch: 1.5,
+      background: [],
+      events: withIds('forum', [
+        booking(hm(9, 30), hm(9, 45), 'Daily stand-up', 9, 8),
+        booking(hm(10), hm(11), 'Sprint planning', 12, 9),
+        booking(hm(11, 15), hm(11, 45), 'Supplier call (no-show)', 6, 0),
+        booking(hm(12), hm(12, 50), 'Lunch & learn', 18, 14),
+        flushBreak(hm(12, 50)),
+        booking(hm(13), hm(14), 'Quantitative Strategy Sync', 10, 7),
+        flushBreak(hm(14, 40)),
+        booking(hm(15), hm(16, 30), 'Architecture Review Board', 14, 11),
+        booking(hm(16, 45), hm(17, 15), 'Weekly wrap-up', 8, 6)
+      ])
+    },
+    // Bookable student study pod, 12 seats, 65 m³: busy afternoons and evenings.
+    appleton: {
+      emptyAch: 1.0,
+      background: [[hm(8, 30), hm(21), 2]],
+      events: withIds('appleton', [
+        booking(hm(9), hm(10, 30), 'Group project: ML coursework', 5, 4),
+        booking(hm(11), hm(12), 'Tutorial prep', 8, 6),
+        booking(hm(13), hm(14, 30), 'Exam revision group', 9, 7),
+        flushBreak(hm(14, 30)),
+        booking(hm(14, 45), hm(16, 15), 'Hackathon team sync', 6, 5),
+        booking(hm(17), hm(19), 'Evening study session', 10, 7),
+        flushBreak(hm(19)),
+        booking(hm(19, 30), hm(21), 'Society committee', 8, 5)
+      ])
+    },
+    // One student's bedroom, 32 m³: study blocks, out at lectures, asleep at night.
+    personal: {
+      emptyAch: 0.5,
+      background: [[0, hm(7, 30), 1], [hm(23), 1440, 1]],
+      events: withIds('personal', [
+        booking(hm(9, 30), hm(12), 'Morning study block', 1, 1),
+        booking(hm(14), hm(17), 'Afternoon study block', 1, 1),
+        flushBreak(hm(17)),
+        booking(hm(19), hm(22, 30), 'Evening revision', 1, 1)
+      ])
+    }
+  };
+
+  // Custom rooms: the meeting-room day scaled to the room's seats.
+  var scaledPlans = {};
+  function planFor(roomId) {
+    if (!roomId || roomId === LIVE_ROOM_ID) return null;
+    if (DAY_PLANS[roomId]) return DAY_PLANS[roomId];
+    var room = getAllRooms().find(function (r) { return r.id === roomId; });
+    if (!room) return null;
+    var cap = roomCapacity(room);
+    var key = roomId + ':' + cap;
+    if (!scaledPlans[key]) {
+      var k = cap / 20;
+      var base = DAY_PLANS.forum;
+      scaledPlans[key] = {
+        emptyAch: base.emptyAch,
+        background: [],
+        events: base.events.map(function (e) {
+          var c = {};
+          for (var p in e) if (Object.prototype.hasOwnProperty.call(e, p)) c[p] = e[p];
+          c.id = roomId + '-' + e.id;
+          if (c.type === 'booking') {
+            c.scheduled = Math.max(1, Math.round(e.scheduled * k));
+            c.expected = e.expected === 0 ? 0 : Math.max(1, Math.round(e.expected * k));
+          }
+          return c;
+        })
+      };
+    }
+    return scaledPlans[key];
+  }
+
+  function eventAt(events, tod) {
+    for (var i = 0; i < events.length; i++) {
+      if (tod >= events[i].start && tod < events[i].end) return events[i];
+    }
+    return null;
+  }
+  function backgroundAt(plan, tod) {
+    for (var i = 0; i < plan.background.length; i++) {
+      var b = plan.background[i];
+      if (tod >= b[0] && tod < b[1]) return b[2];
+    }
+    return 0;
+  }
+  // Deterministic -1 / 0 / +1 headcount wobble that changes every 10 minutes.
+  function wobble(tod) {
+    var h = (Math.imul(Math.floor(tod / 10) + 1, 2654435761) >>> 0) % 4;
+    return [0, 1, 0, -1][h];
+  }
+  // People in the room at minute-of-day `tod`. People arrive over the first 5 minutes.
+  function plannedOccupancy(plan, tod, smooth) {
+    tod = ((Math.floor(tod) % 1440) + 1440) % 1440;
+    var ev = eventAt(plan.events, tod);
+    var bg = backgroundAt(plan, tod);
+    if (!ev) return bg;
+    if (ev.type === 'buffer') return 0;
+    var n = ev.expected;
+    var into = tod - ev.start;
+    if (into < 5) n = Math.round(bg + (n - bg) * (into + 1) / 5);
+    if (!smooth && ev.expected >= 4 && into >= 5) n += wobble(tod);
+    return Math.max(0, n);
+  }
+  function plannedScheduled(plan, tod) {
+    tod = ((Math.floor(tod) % 1440) + 1440) % 1440;
+    var ev = eventAt(plan.events, tod);
+    return ev && ev.type === 'booking' ? ev.scheduled : 0;
+  }
+  // Airflow for the plan: an empty room has its door open.
+  function planAirflowQ(plan, occ, qWindows) {
+    if (occ > 0 || !plan) return qWindows;
+    return Math.max(qWindows, plan.emptyAch * STATE.roomVolume);
+  }
+
+  // true  => clock is the real time of day and sample rooms follow DAY_PLANS
+  // false => a demo clock (8-hour day / guided demo, or a paused / finished day)
+  var realTime = true;
+
+  function realMinutesOfDay() {
+    var d = new Date();
+    return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+  }
+  function syncClockToReal() {
+    STATE.simMinutesFrom9AM = realMinutesOfDay() - 9 * 60;
+  }
+  function isWeekend() {
+    var day = new Date().getDay();
+    return day === 0 || day === 6;
+  }
+
   function clockMinutesOfDay() {
-    return (9 * 60 + Math.floor(STATE.simMinutesFrom9AM + 1e-9)) % 1440;
+    return (((9 * 60 + Math.floor(STATE.simMinutesFrom9AM + 1e-9)) % 1440) + 1440) % 1440;
   }
   function formatClockHHMM(minOfDay) {
     var m = ((Math.round(minOfDay) % 1440) + 1440) % 1440;
     return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   }
-  function clockString() { return formatClockHHMM(clockMinutesOfDay()) + ':00'; }
+  function clockString() {
+    var x = STATE.simMinutesFrom9AM;
+    var secs = Math.floor((x - Math.floor(x + 1e-9)) * 60 + 1e-6);
+    if (secs < 0 || secs > 59) secs = 0;
+    return formatClockHHMM(clockMinutesOfDay()) + ':' + String(secs).padStart(2, '0');
+  }
+
+  // The calendar shown and forecast: the demo calendar while a demo clock runs,
+  // otherwise the current room's typical weekday (none for the Live Room).
+  function activePlan() {
+    return realTime ? planFor(STATE.currentRoomId) : null;
+  }
+  function getSchedule() {
+    if (!realTime) return DEMO_SCHEDULE;
+    var plan = planFor(STATE.currentRoomId);
+    return plan ? plan.events : [];
+  }
+  // The part of the day worth listing: the last finished item, then what's on now and next.
+  function upcomingSchedule(max) {
+    var all = getSchedule();
+    if (!realTime) return all.slice();
+    var now = clockMinutesOfDay();
+    var firstOpen = all.findIndex(function (e) { return e.end > now; });
+    if (firstOpen === -1) return all.slice(-1);
+    return all.slice(Math.max(0, firstOpen - 1), Math.max(0, firstOpen - 1) + (max || 5));
+  }
   function formatMMSS(totalSecs) {
     var s = Math.max(0, Math.floor(totalSecs));
     return String(Math.floor(s / 60)).padStart(2, '0') + 'm ' + String(s % 60).padStart(2, '0') + 's';
@@ -487,6 +673,9 @@
     var qNow = getCurrentAirflowQ();
     var c = STATE.co2;
     var out = [{ t: 0, tod: nowTod, co2: c, occ: STATE.occupancy, flushing: STATE.isWindowOpen }];
+    var schedule = getSchedule();
+    var plan = activePlan();
+    var nowEv = eventAt(schedule, nowTod);
 
     for (var t = stepMin; t <= horizonMin; t += stepMin) {
       var tod = (nowTod + t - stepMin) % 1440;
@@ -494,16 +683,17 @@
       var q = qClosed;
       var flushing = false;
 
-      var ev = null;
-      for (var i = 0; i < SCHEDULE.length; i++) {
-        if (tod >= SCHEDULE[i].start && tod < SCHEDULE[i].end) { ev = SCHEDULE[i]; break; }
-      }
+      var ev = eventAt(schedule, tod);
       if (ev && ev.type === 'buffer') {
         occ = 0; q = qFlush; flushing = true;
+      } else if (plan) {
+        // the current booking keeps today's headcount; later times follow the plan
+        occ = (ev && ev === nowEv) ? STATE.occupancy : plannedOccupancy(plan, tod, true);
+        q = planAirflowQ(plan, occ, qClosed);
       } else if (ev) {
         occ = (nowTod >= ev.start && nowTod < ev.end) ? STATE.occupancy : ev.expected;
       } else {
-        var ended = SCHEDULE.some(function (e) { return e.end <= tod && e.end > nowTod; });
+        var ended = schedule.some(function (e) { return e.end <= tod && e.end > nowTod; });
         occ = ended ? Math.min(2, STATE.occupancy) : STATE.occupancy;
       }
       // Windows that are open right now stay open until recovered (max 20 min)
@@ -522,7 +712,7 @@
     var best = null;
     for (var i = 0; i < tl.length; i++) {
       var p = tl[i];
-      var blocked = p.t > 0 && SCHEDULE.some(function (e) {
+      var blocked = p.t > 0 && getSchedule().some(function (e) {
         return p.tod >= e.start && p.tod < e.end;
       });
       if (blocked) continue;
@@ -650,6 +840,7 @@
       co2: STATE.co2,
       simMinutes: STATE.simMinutesFrom9AM,
       clock: clockString(),
+      realTime: realTime,
       windows: copyWindows(STATE.windows),
       flush: { running: FLUSH.running, elapsedSec: FLUSH.elapsedSec, startCo2: FLUSH.startCo2, last: FLUSH.last },
       demo: demoPublic()
@@ -683,6 +874,7 @@
     STATE.kFlow = s.kFlow;
     STATE.co2 = s.co2;
     STATE.simMinutesFrom9AM = s.simMinutes;
+    if (typeof s.realTime === 'boolean') realTime = s.realTime;
     STATE.windows = copyWindows(s.windows || []);
     if (s.flush) {
       FLUSH.running = !!s.flush.running;
@@ -830,6 +1022,7 @@
     if (demoMode === 'guided') exitGuidedInternal(true);
     FLUSH.running = false; FLUSH.elapsedSec = 0;
     applyRoomToState(room);
+    if (!STATE.isTimeWarpRunning) enterRealTime();
     syncFlush();
     emit('room');
   }
@@ -873,6 +1066,7 @@
 
   function setOccupancy(n) {
     STATE.occupancy = Math.max(0, parseInt(n, 10) || 0);
+    if (realTime) holdOccupancyOverride();
     saveCurrentRoomChangesIfCustom();
     emit('param');
   }
@@ -925,8 +1119,8 @@
     STATE.scheduledCount = currentRoom.scheduledCount || 12;
     STATE.co2GenPerPerson = 16.0;
     STATE.co2 = currentRoom.co2 || 1280.0;
-    STATE.simMinutesFrom9AM = 315;
     FLUSH.running = false; FLUSH.elapsedSec = 0; FLUSH.last = null;
+    enterRealTime();
     rng = mulberry32(DEFAULT_SEED);
     refreshTicker();
     emit('reset');
@@ -953,11 +1147,194 @@
     if (FLUSH.running) FLUSH.elapsedSec += minutes * 60;
   }
 
-  // One tick = 1 sim-minute of CO2 AND 1 sim-minute of clock / flush stopwatch /
-  // countdown (the countdown is derived from the model, not decremented).
+  /* ---- 7b. REAL-TIME DAY: the sample room follows its typical weekday ---- */
+  var OCCUPANT_OPEN_PPM = 1600;   // nobody in the room acts before this: someone cracks a window
+  var OCCUPANT_CLOSE_PPM = 800;   // ... and shuts it again once the air is fresh
+  var HISTORY_MIN = 240;
+  var history = [];               // [{ abs, co2, occ, sched }] one entry per real minute
+  var occOverrideUntil = 0;       // ms: a manual headcount holds until the next calendar change
+  var occupantOpened = false;     // the simulated occupants (not the user) opened a window
+  var lastPlanEvId = null;
+
+  function backendOwnsRoom() {
+    return !!(root.hackaburgerBackend && root.hackaburgerBackend.mode !== 'sim');
+  }
+
+  // What the people in the room do at minute `tod`: follow Caelum's fresh-air breaks,
+  // and crack a window when the air gets really bad. Returns the open-window count.
+  function occupantWindows(plan, tod, prevEvId, co2, openNow, occ, nWin, flags) {
+    var ev = eventAt(plan.events, tod);
+    var evId = ev ? ev.id : null;
+    if (evId !== prevEvId) {
+      var prev = prevEvId && plan.events.find(function (e) { return e.id === prevEvId; });
+      if (ev && ev.type === 'buffer') { flags.byOccupants = false; return Math.min(ev.windows || 2, nWin); }
+      if (prev && prev.type === 'buffer') { flags.byOccupants = false; return 0; }
+    }
+    if (openNow === 0 && occ > 0 && co2 >= OCCUPANT_OPEN_PPM) { flags.byOccupants = true; return 1; }
+    if (openNow > 0 && flags.byOccupants && co2 <= OCCUPANT_CLOSE_PPM) { flags.byOccupants = false; return 0; }
+    return openNow;
+  }
+
+  function windowsQ(openCount) {
+    if (openCount <= 0) return getAirflowQ(false);
+    var area = 0;
+    for (var i = 0; i < openCount && i < STATE.windows.length; i++) area += STATE.windows[i].area || 1.0;
+    return getAirflowQ(false) + STATE.kFlow * area;
+  }
+
+  function pushHistory(abs) {
+    var last = history[history.length - 1];
+    var row = { abs: abs, co2: STATE.co2, occ: STATE.occupancy, sched: STATE.scheduledCount };
+    if (last && last.abs === abs) history[history.length - 1] = row;
+    else history.push(row);
+    while (history.length > HISTORY_MIN + 5) history.shift();
+  }
+
+  // Advance the sample room by `minutes` of real time, minute by minute.
+  function stepRealDay(minutes) {
+    var plan = activePlan();
+    var owned = backendOwnsRoom();
+    var abs = Math.floor(realMinutesOfDayAbs() - minutes);
+    var remaining = minutes;
+    while (remaining > 1e-6) {
+      var step = Math.min(1, remaining);
+      var tod = ((abs % 1440) + 1440) % 1440;
+      if (plan && !owned) {
+        if (Date.now() >= occOverrideUntil) STATE.occupancy = plannedOccupancy(plan, tod);
+        STATE.scheduledCount = plannedScheduled(plan, tod);
+        var flags = { byOccupants: occupantOpened };
+        var ev = eventAt(plan.events, tod);
+        var open = occupantWindows(plan, tod, lastPlanEvId, STATE.co2, STATE.openWindowCount,
+          STATE.occupancy, STATE.windows.length, flags);
+        lastPlanEvId = ev ? ev.id : null;
+        occupantOpened = flags.byOccupants;
+        if (open !== STATE.openWindowCount) setOpenInternal(open);
+        STATE.co2 = stepMassBalanceCO2(STATE.co2, STATE.occupancy, STATE.roomVolume,
+          planAirflowQ(plan, STATE.occupancy, getCurrentAirflowQ()), step / 60.0, STATE.co2GenPerPerson);
+      } else if (!owned) {
+        STATE.co2 = stepMassBalanceCO2(STATE.co2, STATE.occupancy, STATE.roomVolume,
+          getCurrentAirflowQ(), step / 60.0, STATE.co2GenPerPerson);
+      }
+      if (FLUSH.running) FLUSH.elapsedSec += step * 60;
+      remaining -= step;
+      abs += 1;
+      pushHistory(Math.floor(realMinutesOfDayAbs() - remaining));
+    }
+    syncClockToReal();
+  }
+
+  // Local-time minute counter (abs % 1440 = minute of day), monotonic across midnight.
+  function realMinutesOfDayAbs() {
+    return Math.floor(Date.now() / 60000) - new Date().getTimezoneOffset();
+  }
+
+  // Replay the last 24 h of the typical day so the room opens at today's real
+  // CO2 level, with a 4-hour history for the charts.
+  function warmUpRealDay() {
+    syncClockToReal();
+    history = [];
+    occOverrideUntil = 0;
+    var plan = activePlan();
+    if (!plan || backendOwnsRoom()) { lastPlanEvId = null; occupantOpened = false; return; }
+    var nowAbs = realMinutesOfDayAbs();
+    var nowTod = Math.floor(realMinutesOfDay());
+    var c = STATE.cOutdoor + 20;
+    var open = 0;
+    var flags = { byOccupants: false };
+    var prevEvId = null;
+    var nWin = STATE.windows.length;
+    for (var m = -1440; m < 0; m++) {
+      var tod = (((nowTod + m) % 1440) + 1440) % 1440;
+      var occ = plannedOccupancy(plan, tod);
+      var ev = eventAt(plan.events, tod);
+      open = occupantWindows(plan, tod, prevEvId, c, open, occ, nWin, flags);
+      prevEvId = ev ? ev.id : null;
+      c = stepMassBalanceCO2(c, occ, STATE.roomVolume, planAirflowQ(plan, occ, windowsQ(open)),
+        1 / 60.0, STATE.co2GenPerPerson);
+      if (m >= -HISTORY_MIN) history.push({ abs: nowAbs + m, co2: c, occ: occ, sched: plannedScheduled(plan, tod) });
+    }
+    STATE.co2 = c;
+    STATE.occupancy = plannedOccupancy(plan, nowTod);
+    STATE.scheduledCount = plannedScheduled(plan, nowTod);
+    open = occupantWindows(plan, nowTod, prevEvId, c, open, STATE.occupancy, nWin, flags);
+    var evNow = eventAt(plan.events, nowTod);
+    lastPlanEvId = evNow ? evNow.id : null;
+    occupantOpened = flags.byOccupants;
+    FLUSH.running = false; FLUSH.elapsedSec = 0;
+    setOpenInternal(open);
+    pushHistory(nowAbs);
+  }
+
+  // Back to the real clock (page load, room switch, reset, end of a demo).
+  function enterRealTime() {
+    realTime = true;
+    if (!STATE.isTimeWarpRunning) warpPhase = 'idle';
+    warmUpRealDay();
+  }
+
+  // A manual headcount (slider) holds until the next booking starts or ends.
+  function holdOccupancyOverride() {
+    var plan = activePlan();
+    if (!plan) return;
+    var nowTod = Math.floor(realMinutesOfDay());
+    var next = 1440;
+    plan.events.forEach(function (e) {
+      [e.start, e.end].forEach(function (b) {
+        var d = ((b - nowTod) + 1440) % 1440;
+        if (d > 0 && d < next) next = d;
+      });
+    });
+    occOverrideUntil = Date.now() + Math.min(next, 120) * 60000;
+  }
+
+  // Past values for the charts: offsets in minutes (negative = ago).
+  function historyAt(minAgo) {
+    if (!history.length) return null;
+    var target = realMinutesOfDayAbs() - minAgo;
+    var best = null;
+    for (var i = 0; i < history.length; i++) {
+      if (!best || Math.abs(history[i].abs - target) < Math.abs(best.abs - target)) best = history[i];
+    }
+    return best && Math.abs(best.abs - target) <= 2 ? best : null;
+  }
+  function daySeries(offsetsMin) {
+    var plan = activePlan();
+    if (!plan || !realTime || backendOwnsRoom() || (role !== 'admin' && link === 'admin')) return null;
+    var nowTod = Math.floor(realMinutesOfDay());
+    return {
+      scheduled: offsetsMin.map(function (o) {
+        if (o < 0) { var h = historyAt(-o); if (h) return h.sched; }
+        return plannedScheduled(plan, nowTod + o);
+      }),
+      actual: offsetsMin.map(function (o) {
+        if (o > 0) return null;
+        if (o === 0) return STATE.occupancy;
+        var h = historyAt(-o);
+        return h ? h.occ : null;
+      }),
+      co2: offsetsMin.map(function (o) {
+        if (o > 0) return null;
+        if (o === 0) return Math.round(STATE.co2);
+        var h = historyAt(-o);
+        return h ? Math.round(h.co2) : null;
+      })
+    };
+  }
+
+  // Real-time mode: advance by the real time elapsed since the last tick.
+  // Demo clock (paused / finished 8-hour day): 1 sim-minute per tick as before.
   // If the browser throttled timers (hidden tab) catch up on missed ticks.
   function tick() {
     var now = Date.now();
+    if (realTime) {
+      var elapsedMin = lastTickAt ? (now - lastTickAt) / 60000 : TICK_MS / 60000;
+      lastTickAt = now;
+      if (elapsedMin > 180) enterRealTime();      // asleep for hours: replay the day instead
+      else stepRealDay(Math.max(0, elapsedMin));
+      syncFlush();
+      emit('tick');
+      return;
+    }
     var missed = lastTickAt ? Math.round((now - lastTickAt) / TICK_MS) : 1;
     lastTickAt = now;
     var n = Math.max(1, Math.min(10, missed));
@@ -1046,6 +1423,7 @@
       setOpenInternal(0);
       emit('reseed');
     }
+    realTime = false;
     demoMode = 'warp';
     warpPhase = 'running';
     STATE.isTimeWarpRunning = true;
@@ -1271,6 +1649,7 @@
     // run in the meeting room preset (deterministic geometry)
     var room = getAllRooms().find(function (r) { return r.id === GUIDED_ROOM_ID; });
     if (room) applyRoomToState(room);
+    realTime = false;
     demoMode = 'guided';
     refreshTicker();                                  // stops the background tick
     rng = mulberry32(DEFAULT_SEED);
@@ -1316,6 +1695,7 @@
     demoMode = 'none';
     G.step = 0; G.pulse = false; G.autoplay = false; G.scenario = null; G.pre = null;
     if (restore && pre && pre.snap) applySnapshot(pre.snap);
+    if (realTime) enterRealTime();
     refreshTicker();
   }
 
@@ -1373,6 +1753,7 @@
     link = 'standalone';
     authority = true;
     remoteDemo = null;
+    enterRealTime();
     refreshTicker();
     notify('link');
   }
@@ -1387,6 +1768,7 @@
     if (role === 'admin') {
       authority = true;
       link = 'admin';
+      enterRealTime();
       refreshTicker();
       heartbeatTimer = root.setInterval(broadcast, TICK_MS);
       broadcast();
@@ -1419,7 +1801,14 @@
     STATE: STATE,
     FLUSH: FLUSH,
     DEFAULT_ROOMS: DEFAULT_ROOMS,
-    SCHEDULE: SCHEDULE,
+    get SCHEDULE() { return getSchedule(); },
+    DEMO_SCHEDULE: DEMO_SCHEDULE,
+    DAY_PLANS: DAY_PLANS,
+    getSchedule: getSchedule,
+    upcomingSchedule: upcomingSchedule,
+    daySeries: daySeries,
+    isRealTime: function () { return realTime; },
+    isSampleWeekday: function () { return realTime && !!activePlan() && isWeekend(); },
     CHANNEL_NAME: CHANNEL_NAME,
     // rooms
     getCustomRooms: getCustomRooms,

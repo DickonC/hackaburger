@@ -461,7 +461,7 @@
     <section class="card" aria-labelledby="schedTitle">
       <div class="sched-head">
         <h2 id="schedTitle">Today's schedule</h2>
-        <span class="eyebrow" id="schedClock">Sim time 14:15</span>
+        <span class="eyebrow" id="schedClock">Now</span>
       </div>
       <ul id="scheduleList" class="sched-list"></ul>
     </section>
@@ -945,7 +945,9 @@
     var flashedBuffer = false;
     function renderSchedule(d) {
       var now = Caelum.clockMinutesOfDay();
-      $('schedClock').textContent = 'Sim time ' + Caelum.formatClock(now);
+      var sampleDay = Caelum.isSampleWeekday();
+      $('schedClock').textContent = (Caelum.isRealTime() ? (sampleDay ? 'Sample weekday · ' : 'Now ') : 'Demo time ') + Caelum.formatClock(now);
+      $('schedTitle').textContent = sampleDay ? 'Typical weekday schedule' : "Today's schedule";
       var list = $('scheduleList');
       var guided = d.mode === 'guided';
       var showBuffer = !(guided && d.step < 4);
@@ -953,7 +955,9 @@
       var html = '';
       var winCount = Math.min(2, STATE.windows.length) || 2;
 
-      Caelum.SCHEDULE.forEach(function (e) {
+      var items = Caelum.upcomingSchedule(5);
+      if (!items.length) html = '<li class="row"><span class="title">No bookings for this room</span></li>';
+      items.forEach(function (e) {
         var done = now >= e.end, live = now >= e.start && now < e.end;
         var time = Caelum.formatClock(e.start) + '–' + Caelum.formatClock(e.end);
         if (e.type === 'buffer') {
@@ -962,7 +966,7 @@
           html += '<li class="row buffer' + (done ? ' done' : '') + '" id="bufferRowRoom">' +
             '<span class="time">' + time + '</span>' +
             '<span class="title">Fresh-air break · 10 min</span>' +
-            '<span class="meta">Open ' + winCount + ' windows so the next meeting starts with fresh air.</span>' +
+            '<span class="meta">Open ' + winCount + (winCount === 1 ? ' window' : ' windows') + ' so the next booking starts with fresh air.</span>' +
             '<span class="status"><span class="tag flush">' + tag + '</span></span></li>';
         } else {
           var status = done ? ['DONE', ''] : live ? ['NOW', 'now'] : (!nextMarked ? ['NEXT', 'next'] : ['LATER', '']);
@@ -970,7 +974,7 @@
           html += '<li class="row' + (done ? ' done' : '') + '">' +
             '<span class="time">' + time + '</span>' +
             '<span class="title">' + e.title + '</span>' +
-            '<span class="meta">' + e.scheduled + ' booked · ~' + e.expected + ' expected</span>' +
+            '<span class="meta">' + e.scheduled + ' booked · ' + (e.expected === 0 ? 'likely no-show' : '~' + e.expected + ' expected') + '</span>' +
             '<span class="status"><span class="tag ' + status[1] + '">' + status[0] + '</span></span></li>';
         }
       });

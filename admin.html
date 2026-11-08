@@ -2142,13 +2142,6 @@
         cadCtx.textAlign = 'center';
         cadCtx.textBaseline = 'middle';
         cadCtx.fillText(String(boardNumber(id)), px, py + 0.5);
-        const dots = '●'.repeat(boardNumber(id));
-        const inward = px < box.x + box.dw / 2;
-        cadCtx.fillStyle = online ? '#15803D' : '#64748B';
-        cadCtx.font = '9px "General Sans", system-ui, sans-serif';
-        cadCtx.textAlign = inward ? 'left' : 'right';
-        cadCtx.textBaseline = 'middle';
-        cadCtx.fillText(dots, inward ? px + 14 : px - 14, py);
         const heard = b.heard != null ? `${b.heard} heard` : 'no reading';
         const pending = b.config && b.config.pending ? ' · change pending' : '';
         const since = !online && b.last_ts ? ` · offline since ${new Date(b.last_ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '';

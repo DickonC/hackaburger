@@ -862,7 +862,11 @@
     const STATE = getState();
     const node = getNode ? getNode() : null;
     const room = STATE ? live.serverRooms[STATE.currentRoomId] : null;
-    if (live.enabled && room && room.device === 'heatmap' && live.mode === 'live') return;
+    if (live.enabled && room && room.device === 'heatmap' && live.mode === 'live') {
+      // Heatmap room: stream the real devices from the four boards' latest snapshot
+      pushHeatmapDeviceRow();
+      return;
+    }
     if (!live.enabled || !live.devices.length || !room || !node || room.device !== node.id) {
       if (origPush) return origPush();
       return;
@@ -880,6 +884,35 @@
       <span class="text-[9px] px-1.5 py-0.2 rounded font-mono-tabular ${accepted
         ? 'bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25'
         : 'bg-canvas text-inkMuted border border-borderLine'}">${accepted ? 'IN-RANGE' : 'FILTERED'}</span>`;
+    stream.prepend(row);
+    while (stream.children.length > 14) stream.removeChild(stream.lastChild);
+  }
+  const KIND_NAMES = { apple_device: 'Apple', computer: 'Laptop', phone: 'Phone', wearable: 'Watch',
+    brand_other: 'Other', unknown: 'Unknown', earbuds: 'Earbuds', tracker: 'Tracker', beacon: 'Beacon', fixed: 'Fixed' };
+  function pushHeatmapDeviceRow() {
+    const stream = document.getElementById('blePacketStream');
+    const devs = live.heatmapDebug && live.heatmapDebug.devices;
+    if (!stream || !devs || !devs.length) return;
+    if (live.streamTs !== live.heatmapDebug.ts) {
+      // New snapshot: in-room devices first, strongest first
+      live.streamTs = live.heatmapDebug.ts;
+      live.streamDevices = devs.slice().sort((a, b) =>
+        (a.status === 'in_room' ? 0 : 1) - (b.status === 'in_room' ? 0 : 1) || (b.weakest_dbm ?? -999) - (a.weakest_dbm ?? -999));
+      live.streamCursor = 0;
+    }
+    const d = live.streamDevices[live.streamCursor++ % live.streamDevices.length];
+    const best = Object.entries(d.rssi || {}).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1])[0];
+    const where = best ? `board ${best[0].replace(/\D/g, '')} // ${Math.round(best[1])} dBm` : '—';
+    const inRoom = d.status === 'in_room';
+    const tag = inRoom ? 'IN-ROOM' : String(d.reason || 'filtered').replace(/_/g, ' ').toUpperCase();
+    const row = document.createElement('div');
+    row.className = 'px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px] font-mono-tabular';
+    row.innerHTML = `
+      <span class="${inRoom ? 'text-inkPrimary' : 'text-inkMuted'} font-mono-tabular">${(d.id || '').slice(0, 8)} · ${KIND_NAMES[d.kind] || 'Unknown'}</span>
+      <span class="${inRoom ? 'text-iceForecast font-medium' : 'text-inkMuted'} font-mono-tabular">${where} · ${d.boards_heard} boards</span>
+      <span class="text-[9px] px-1.5 py-0.2 rounded font-mono-tabular ${inRoom
+        ? 'bg-tealOptimal/10 text-tealOptimal border border-tealOptimal/25'
+        : 'bg-canvas text-inkMuted border border-borderLine'}">${tag}</span>`;
     stream.prepend(row);
     while (stream.children.length > 14) stream.removeChild(stream.lastChild);
   }

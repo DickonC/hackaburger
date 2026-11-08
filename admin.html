@@ -1795,9 +1795,8 @@
       if (!live || !live.enabled || live.forceSim || live.mode !== 'live' || !live.heatmap) return null;
       const demoMode = Caelum.demo.mode();
       if (demoMode === 'live') return live;
-      if (demoMode !== 'none') return null;
-      const room = live.serverRooms && live.serverRooms[STATE.currentRoomId];
-      if (!room || room.device !== 'heatmap') return null;
+      // Only the Live Room shows the boards; every other room shows the sample heatmap
+      if (demoMode !== 'none' || STATE.currentRoomId !== 'live') return null;
       return live;
     }
 
@@ -2557,12 +2556,9 @@
       });
     }
 
-    // Rooms that are meant to show the boards (Live Room / heatmap rooms) never show sample data
+    // Only the Live Room shows the boards (or waits for them); never sample data
     function isBoardRoom() {
-      if (Caelum.demo.mode() === 'live' || STATE.currentRoomId === 'live') return true;
-      const backend = window.hackaburgerBackend;
-      const room = backend && backend.serverRooms && backend.serverRooms[STATE.currentRoomId];
-      return !!(room && room.device === 'heatmap');
+      return Caelum.demo.mode() === 'live' || STATE.currentRoomId === 'live';
     }
     function waitingHeatmap() {
       return {

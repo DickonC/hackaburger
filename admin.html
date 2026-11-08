@@ -626,6 +626,7 @@
           <div id="cadGlazingLabel" class="absolute top-2 left-3 text-[12px] text-inkMuted pointer-events-none">Windows</div>
           <div id="cadTip" hidden></div>
         </div>
+        <div id="heatLegend" class="flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-inkSecondary mt-1.5" hidden></div>
         <div class="mt-2 flex items-start justify-between gap-3">
           <p id="whereCaption" class="text-[13px] text-inkSecondary">Core vs perimeter <strong id="spatialGradText" class="font-medium text-inkPrimary">+190 ppm</strong></p>
           <button id="heatmapDotsBtn" type="button" hidden aria-pressed="false"
@@ -1793,6 +1794,26 @@
       return { x: (w - dw) / 2, y: (h - dh) / 2, dw, dh };
     }
 
+    // Map dot colour per device kind (in-room devices only)
+    const KIND_COLORS = {
+      apple_device: '#2563EB', computer: '#7C3AED', phone: '#059669', wearable: '#DB2777',
+      brand_other: '#EA580C', unknown: '#64748B',
+    };
+    const kindColor = (k) => KIND_COLORS[k] || KIND_COLORS.unknown;
+
+    // While the room-edge slider moves, recount from the latest device data right away,
+    // instead of waiting for the next server snapshot and the 60 s smoothing.
+    let edgePreview = null; // { edge, until }
+    function previewActive() {
+      if (edgePreview && Date.now() > edgePreview.until) edgePreview = null;
+      return !!edgePreview;
+    }
+    function countsInRoom(d) {
+      if (!previewActive()) return d.status === 'in_room';
+      return (d.status === 'in_room' || d.reason === 'outside_edge')
+        && d.weakest_dbm != null && d.weakest_dbm >= edgePreview.edge;
+    }
+
     function renderHeatmapMap(live) {
       const dwPx = cadCanvas.offsetWidth || 380;
       const dhPx = cadCanvas.offsetHeight || 180;
@@ -1838,14 +1859,14 @@
       // (the weighted centre pulls outside devices into the middle), so they're never drawn;
       // the device table below still lists them with their reason.
       const debugDevices = showDots && live.heatmapDebug
-        ? (live.heatmapDebug.devices || []).filter((d) => d.status === 'in_room') : [];
+        ? (live.heatmapDebug.devices || []).filter(countsInRoom) : [];
       debugDevices.forEach((d) => {
         if (d.x == null || d.y == null) return;
         const px = box.x + (d.x / room.width_m) * box.dw;
         const py = box.y + (d.y / room.length_m) * box.dh;
-        const rejected = d.status !== 'in_room';
-        let color = '#0369A1';
-        if (d.reason === 'outside_edge') color = '#F59E0B';
+        const rejected = !countsInRoom(d);
+        let color = kindColor(d.kind);
+        if (d.reason === 'outside_edge' && !countsInRoom(d)) color = '#F59E0B';
         else if (d.reason === 'too_brief') color = '#CA8A04';
         else if (rejected) color = '#94A3B8';
         cadCtx.beginPath();
@@ -1910,12 +1931,26 @@
       const strong = byId('spatialGradText');
       if (strong) strong.textContent = `${age}s ago`;
       const devs = byId('whereDevices');
-      if (latest.devices_in_room == null) {
+      const dbg = live.heatmapDebug && live.heatmapDebug.devices;
+      if (previewActive() && dbg) {
+        const n = dbg.filter(countsInRoom).length;
+        const dpp = (live.heatmapConfig && live.heatmapConfig.people && live.heatmapConfig.people.devices_per_person) || 1.2;
+        byId('bleCountDisplay').textContent = String(Math.round(n / dpp));
+        devs.hidden = false;
+        devs.textContent = `≈ ${n} devices in room · preview`;
+      } else if (latest.devices_in_room == null) {
         devs.hidden = true;
       } else {
         devs.hidden = false;
         devs.textContent = `${latest.devices_in_room} devices in room`;
       }
+      const legend = byId('heatLegend');
+      const showDots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
+      const kinds = dbg ? [...new Set(dbg.filter(countsInRoom).map((d) => d.kind || 'unknown'))] : [];
+      legend.hidden = !showDots || !kinds.length;
+      legend.innerHTML = kinds.sort().map((k) => `<span class="inline-flex items-center gap-1">`
+        + `<i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${kindColor(k)}"></i>`
+        + `${kindLabel(k)}</span>`).join('');
     }
 
     function fieldFocused(id) {
@@ -1947,6 +1982,8 @@
         banner.hidden = true;
         warnings.hidden = true;
         if (single) single.hidden = false;
+        const legend = byId('heatLegend');
+        if (legend) legend.hidden = true;
         const devs = byId('whereDevices');
         if (devs) devs.hidden = true;
         const cap = byId('whereCaption');
@@ -2104,7 +2141,7 @@
       if (!live || typeof live.setHeatmapDebug !== 'function') return;
       const details = document.querySelector('details.more');
       const dots = byId('heatmapDotsBtn').getAttribute('aria-pressed') === 'true';
-      live.setHeatmapDebug(!!heatmapLive() && (!!(details && details.open) || dots));
+      live.setHeatmapDebug(!!heatmapLive() && (!!(details && details.open) || dots || previewActive()));
     }
 
     async function heatRun(label, fn) {
@@ -2154,6 +2191,10 @@
         byId('heatEdgeVal').textContent = `${dbmText(byId('heatEdgeSlider').value)} · manual`;
         byId('heatEdgeAuto').checked = false;
         const v = Number(byId('heatEdgeSlider').value);
+        edgePreview = { edge: v, until: Date.now() + 75000 };
+        syncDebugPolling();
+        const hl = heatmapLive();
+        if (hl) { renderHeatmapMap(hl); paintHeatmapCaption(hl); }
         heatLater('edge', () => {
           const live = liveOf();
           if (!live) return;
